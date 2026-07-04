@@ -1,8 +1,9 @@
 import { copyFile, mkdir, rename, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 export async function atomicWrite(filePath: string, content: string): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true })
   const tmp = `${filePath}.ccp-tmp`
   await writeFile(tmp, content, 'utf8')
   await rename(tmp, filePath)
