@@ -2,11 +2,16 @@ import { deriveSharedKey, handshakeKeys, openJson, pinMac, sealJson, type Sealed
 import type { DeviceEntry } from './devices.js'
 
 async function post(host: string, port: number, path: string, payload: unknown): Promise<any> {
-  const res = await fetch(`http://${host}:${port}${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
+  let res: Response
+  try {
+    res = await fetch(`http://${host}:${port}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    throw new Error(`cannot reach ${host}:${port} — is \`ccp serve\` running on the other device?`)
+  }
   const data: any = await res.json()
   if (!res.ok) throw new Error(`${path}: ${data.error ?? res.status}`)
   return data
