@@ -8,9 +8,9 @@ import { startUiServer } from './server.js'
 import { newUiToken } from './token.js'
 
 function defaultUiDir(): string {
-  // command.ts compiles to dist/ui/command.js; built assets are copied to dist/ui/
+  // this file compiles to dist/ui/command.js; the built frontend is copied to dist/webui
   const here = dirname(fileURLToPath(import.meta.url)) // .../dist/ui
-  return join(dirname(here), 'ui')                     // .../dist/ui
+  return join(dirname(here), 'webui')                  // .../dist/webui
 }
 
 function openBrowser(url: string): void {

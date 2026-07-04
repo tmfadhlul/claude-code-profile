@@ -25,6 +25,12 @@ export function buildRoutes(ctx: CliContext): Route[] {
     return executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp() })
   }
 
+  // requireManifest throws a plain Error; surface "no manifest yet" as a 409 the UI can detect.
+  async function mustManifest(): Promise<Manifest> {
+    try { return await requireManifest(ctx) }
+    catch (e) { throw new HttpError(409, (e as Error).message) }
+  }
+
   function targetsOf(m: Manifest, targets: string[] | 'all'): string[] {
     if (targets === 'all') return m.profiles.map(p => p.name)
     for (const t of targets) if (!m.profiles.some(p => p.name === t)) throw new HttpError(400, `unknown profile: ${t}`)
@@ -62,7 +68,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
   add('POST', /^\/api\/profiles$/, async (_m, req, res) => {
     const { name, from } = await readJson<{ name: string; from?: string }>(req)
     if (!name) throw new HttpError(400, 'name required')
-    const m = await requireManifest(ctx)
+    const m = await mustManifest()
     if (m.profiles.some(p => p.name === name)) throw new HttpError(409, `profile exists: ${name}`)
     const src = from ? m.profiles.find(p => p.name === from) : null
     if (from && !src) throw new HttpError(400, `unknown profile: ${from}`)
@@ -77,7 +83,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
   })
 
   add('PATCH', /^\/api\/profiles\/([^/]+)$/, async (mtch, req, res) => {
-    const m = await requireManifest(ctx)
+    const m = await mustManifest()
     const pr = m.profiles.find(p => p.name === mtch[1])
     if (!pr) throw new HttpError(404, `unknown profile: ${mtch[1]}`)
     const body = await readJson<{ env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null }>(req)
@@ -90,14 +96,14 @@ export function buildRoutes(ctx: CliContext): Route[] {
   })
 
   add('GET', /^\/api\/status$/, async (_m, _req, res) => {
-    const m = await requireManifest(ctx)
+    const m = await mustManifest()
     const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
     const r = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: true })
     sendJson(res, 200, { inSync: actions.length === 0, pending: r.performed })
   })
 
   add('POST', /^\/api\/apply$/, async (_m, _req, res) => {
-    const m = await requireManifest(ctx)
+    const m = await mustManifest()
     const r = await applyAndReport(m)
     sendJson(res, 200, { performed: r.performed, backupDir: r.backupDir })
   })
@@ -127,7 +133,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
 
   // ── mcp ─────────────────────────────────────────────────────────────────────
   add('GET', /^\/api\/mcp$/, async (_m, _req, res) => {
-    const m = await requireManifest(ctx)
+    const m = await mustManifest()
     sendJson(res, 200, {
       servers: Object.keys(m.mcpServers).sort(),
       profiles: m.profiles.map(p => ({ name: p.name, has: p.mcp })),
@@ -137,7 +143,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
   add('POST', /^\/api\/mcp$/, async (_m, req, res) => {
     const { name, command, args, targets } = await readJson<{ name: string; command?: string; args?: string[]; targets: string[] | 'all' }>(req)
     if (!name) throw new HttpError(400, 'name required')
-    const m = await requireManifest(ctx)
+    const m = await mustManifest()
     if (!m.mcpServers[name]) {
       if (!command) throw new HttpError(400, `unknown server "${name}" — command required to define it`)
       m.mcpServers[name] = { command, ...(args && args.length ? { args } : {}) }
@@ -153,7 +159,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
 
   add('DELETE', /^\/api\/mcp\/([^/]+)$/, async (mtch, req, res) => {
     const { targets } = await readJson<{ targets: string[] | 'all' }>(req)
-    const m = await requireManifest(ctx)
+    const m = await mustManifest()
     const name = decodeURIComponent(mtch[1])
     for (const t of targetsOf(m, targets)) {
       const pr = m.profiles.find(p => p.name === t)!
@@ -167,7 +173,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
 
   add('POST', /^\/api\/mcp\/sync$/, async (_m, req, res) => {
     const { from, to } = await readJson<{ from: string; to: string[] | 'all' }>(req)
-    const m = await requireManifest(ctx)
+    const m = await mustManifest()
     const src = m.profiles.find(p => p.name === from)
     if (!src) throw new HttpError(400, `unknown profile: ${from}`)
     for (const t of targetsOf(m, to)) {
