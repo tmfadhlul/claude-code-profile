@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startSyncServer } from '../src/syncserver.js'
+import { startSyncServer, MAX_PIN_ATTEMPTS } from '../src/syncserver.js'
 import { pairWithServer, fetchRemote, fetchSecrets } from '../src/syncclient.js'
 import { exportBundle, importBundle } from '../src/bundle.js'
 import { detectPlatform } from '../src/platform.js'
@@ -49,6 +49,24 @@ describe('LAN sync', () => {
   it('rejects unknown token', async () => {
     const device = { name: 'x', host: '127.0.0.1', port: server.port, token: 'bogus', key: Buffer.alloc(32).toString('base64') }
     await expect(fetchRemote(device)).rejects.toThrow(/unknown token/)
+  })
+})
+
+describe('PIN brute-force lockout', () => {
+  it('locks pairing after MAX_PIN_ATTEMPTS wrong PINs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ccp-lock-'))
+    const p = detectPlatform({ osKind: process.platform as any, home: root, shell: '/bin/zsh' })
+    const s = await startSyncServer({ manifestRoot: root, platform: p, pin: '111222' })
+    try {
+      // MAX_PIN_ATTEMPTS wrong tries all report a pin mismatch
+      for (let i = 0; i < MAX_PIN_ATTEMPTS; i++) {
+        await expect(pairWithServer('127.0.0.1', s.port, '000000', 'attacker')).rejects.toThrow(/pin mismatch/i)
+      }
+      // now locked — even the CORRECT pin is refused
+      await expect(pairWithServer('127.0.0.1', s.port, '111222', 'me')).rejects.toThrow(/locked/i)
+    } finally {
+      await s.close()
+    }
   })
 })
 

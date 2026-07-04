@@ -20,10 +20,19 @@ export function registerBundleCommands(program: Command, ctx: CliContext): void 
 
   program.command('import <file>').description('import a bundle and apply it')
     .option('--dry-run')
-    .action(async (file: string, opts: { dryRun?: boolean }) => {
+    .option('--yes', 'apply without the safety confirmation')
+    .action(async (file: string, opts: { dryRun?: boolean; yes?: boolean }) => {
       const { manifestYaml, assets } = importBundle(await readFile(file))
-      const m = parseManifest(manifestYaml)
+      const m = parseManifest(manifestYaml) // also runs assertSafeManifest — rejects injectable identifiers
       console.log(`bundle: ${m.profiles.length} profiles, ${Object.keys(m.mcpServers).length} mcp servers, ${Object.keys(assets).length} asset files`)
+      if (!opts.dryRun && !opts.yes) {
+        console.log('')
+        console.log('⚠️  Applying a bundle writes shell launcher functions to your rc file and MCP server')
+        console.log('    commands to your Claude config — both execute code on your machine. Only import')
+        console.log('    bundles you created or trust. Re-run with --yes to proceed (or --dry-run to preview).')
+        process.exitCode = 1
+        return
+      }
       if (!opts.dryRun) {
         await backupFiles([join(ctx.manifestRoot, 'manifest.yaml')], ctx.backupRoot, stamp())
         await saveManifest(ctx.manifestRoot, m)

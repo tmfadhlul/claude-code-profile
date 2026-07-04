@@ -20,9 +20,9 @@ async function post(host: string, port: number, path: string, payload: unknown):
 /** PIN-authenticated ECDH pairing. Throws if the server can't prove it knows the PIN. */
 export async function pairWithServer(host: string, port: number, pin: string, name: string): Promise<DeviceEntry> {
   const { privateKey, publicRaw } = handshakeKeys()
-  const { serverPub, salt } = await post(host, port, '/pair', { clientPub: publicRaw })
+  const { handshakeId, serverPub, salt } = await post(host, port, '/pair', { clientPub: publicRaw })
   const key = deriveSharedKey(privateKey, serverPub, salt)
-  const { mac, token } = await post(host, port, '/pair/confirm', { mac: pinMac(key, 'client', pin), name })
+  const { mac, token } = await post(host, port, '/pair/confirm', { handshakeId, mac: pinMac(key, 'client', pin), name })
   if (mac !== pinMac(key, 'server', pin)) throw new Error('server failed PIN verification — possible MITM, aborting')
   return { name, host, port, token, key: key.toString('base64') }
 }

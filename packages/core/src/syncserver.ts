@@ -7,8 +7,11 @@ import {
 } from './crypto.js'
 import { parseManifest } from './manifest.js'
 import { collectAssets } from './assets.js'
-import { loadDevices, saveDevices, type DeviceEntry } from './devices.js'
+import { loadDevices, saveDevices } from './devices.js'
 import type { Platform } from './platform.js'
+
+/** After this many failed PIN confirmations the server refuses further pairing (brute-force guard). */
+export const MAX_PIN_ATTEMPTS = 5
 
 export interface SyncServerDeps {
   manifestRoot: string
@@ -17,6 +20,8 @@ export interface SyncServerDeps {
   /** resolve secret values by name (from the local store) when --allow-secrets */
   secretValues?: (names: string[]) => Promise<Record<string, string>>
   port?: number
+  /** interface to bind (default 0.0.0.0 — all interfaces, needed for LAN peers) */
+  host?: string
   /** override the generated PIN (tests) */
   pin?: string
 }
@@ -34,43 +39,68 @@ function send(res: ServerResponse, code: number, obj: unknown): void {
   res.end(JSON.stringify(obj))
 }
 
-function macEqual(a: string, b: string): boolean {
-  const ba = Buffer.from(a, 'base64'); const bb = Buffer.from(b, 'base64')
-  return ba.length === bb.length && timingSafeEqual(ba, bb)
+/** Constant-time base64 comparison; false on length mismatch (never throws). */
+function ctEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(String(a ?? ''), 'base64')
+  const bb = Buffer.from(String(b ?? ''), 'base64')
+  return ba.length === bb.length && ba.length > 0 && timingSafeEqual(ba, bb)
 }
 
-export async function startSyncServer(deps: SyncServerDeps): Promise<{ port: number; pin: string; close: () => Promise<void> }> {
+/** Constant-time comparison of the opaque device tokens (base64url strings). */
+function ctEqualToken(a: string, b: string): boolean {
+  const ba = Buffer.from(String(a ?? ''), 'utf8')
+  const bb = Buffer.from(String(b ?? ''), 'utf8')
+  return ba.length === bb.length && ba.length > 0 && timingSafeEqual(ba, bb)
+}
+
+export async function startSyncServer(
+  deps: SyncServerDeps,
+): Promise<{ port: number; host: string; pin: string; close: () => Promise<void> }> {
   const pin = deps.pin ?? newPin()
-  let pending: Pending | null = null
+  const host = deps.host ?? '0.0.0.0'
+  // per-handshake state keyed by a server-issued id — no shared global, no cross-client clobber
+  const handshakes = new Map<string, Pending>()
+  let failedAttempts = 0
+  let locked = false
 
   const server = createServer(async (req, res) => {
     try {
       if (req.method !== 'POST') return send(res, 405, { error: 'POST only' })
-      const payload = await body(req)
+      const payload = await body(req).catch(() => null)
+      if (payload === null) return send(res, 400, { error: 'invalid request body' })
 
       if (req.url === '/pair') {
+        if (locked) return send(res, 429, { error: 'pairing locked after too many failed attempts — restart ccp serve' })
         const { privateKey, publicRaw } = handshakeKeys()
         const salt = newSalt()
         const key = deriveSharedKey(privateKey, payload.clientPub, salt)
-        pending = { privateKey, salt, key }
-        return send(res, 200, { serverPub: publicRaw, salt })
+        const handshakeId = newToken()
+        handshakes.set(handshakeId, { privateKey, salt, key })
+        return send(res, 200, { handshakeId, serverPub: publicRaw, salt })
       }
 
       if (req.url === '/pair/confirm') {
-        if (!pending) return send(res, 400, { error: 'no pending handshake' })
-        const { key } = pending
-        pending = null
-        if (!macEqual(payload.mac, pinMac(key, 'client', pin))) return send(res, 403, { error: 'pin mismatch' })
+        if (locked) return send(res, 429, { error: 'pairing locked after too many failed attempts — restart ccp serve' })
+        const pending = typeof payload.handshakeId === 'string' ? handshakes.get(payload.handshakeId) : undefined
+        if (!pending) return send(res, 400, { error: 'no pending handshake (call /pair first)' })
+        handshakes.delete(payload.handshakeId) // one shot per handshake
+        if (!ctEqual(payload.mac, pinMac(pending.key, 'client', pin))) {
+          if (++failedAttempts >= MAX_PIN_ATTEMPTS) locked = true
+          return send(res, 403, { error: 'pin mismatch', attemptsLeft: Math.max(0, MAX_PIN_ATTEMPTS - failedAttempts) })
+        }
+        failedAttempts = 0 // successful pair resets the counter
         const token = newToken()
         const devices = await loadDevices(deps.manifestRoot)
-        devices.push({ name: payload.name ?? 'peer', host: '-', port: 0, token, key: key.toString('base64') })
+        devices.push({ name: String(payload.name ?? 'peer'), host: '-', port: 0, token, key: pending.key.toString('base64') })
         await saveDevices(deps.manifestRoot, devices)
-        return send(res, 200, { mac: pinMac(key, 'server', pin), token })
+        return send(res, 200, { mac: pinMac(pending.key, 'server', pin), token })
       }
 
-      // authenticated endpoints: find device by token, decrypt/encrypt with its key
+      // authenticated endpoints: match device by constant-time token compare
       const devices = await loadDevices(deps.manifestRoot)
-      const device = devices.find(d => d.token === payload.token)
+      const device = typeof payload.token === 'string'
+        ? devices.find(d => ctEqualToken(d.token, payload.token))
+        : undefined
       if (!device) return send(res, 401, { error: 'unknown token' })
       const key = Buffer.from(device.key, 'base64')
 
@@ -88,16 +118,18 @@ export async function startSyncServer(deps: SyncServerDeps): Promise<{ port: num
       }
 
       return send(res, 404, { error: 'not found' })
-    } catch (e) {
-      return send(res, 500, { error: (e as Error).message })
+    } catch {
+      // never leak internal error detail (paths, parse internals) to callers
+      return send(res, 500, { error: 'internal error' })
     }
   })
 
-  await new Promise<void>(resolve => server.listen(deps.port ?? 0, resolve))
+  await new Promise<void>(resolve => server.listen(deps.port ?? 0, host, resolve))
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : 0
   return {
     port,
+    host,
     pin,
     close: () => new Promise<void>((resolve, reject) => server.close(e => (e ? reject(e) : resolve()))),
   }
