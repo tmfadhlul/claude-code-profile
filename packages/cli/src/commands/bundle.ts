@@ -1,18 +1,18 @@
 import type { Command } from 'commander'
 import {
   exportBundle, importBundle, collectAssets, writeAssets, parseManifest, serializeManifest,
-  loadManifest, saveManifest, discoverProfiles, planApply, executeApply, backupFiles,
+  saveManifest, discoverProfiles, planApply, executeApply, backupFiles,
 } from '@ccprofiles/core'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { CliContext } from '../context.js'
+import { requireManifest, type CliContext } from '../context.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
 export function registerBundleCommands(program: Command, ctx: CliContext): void {
   program.command('export <file>').description('export manifest + assets as a portable bundle (no secrets)')
     .action(async (file: string) => {
-      const m = await loadManifest(ctx.manifestRoot)
+      const m = await requireManifest(ctx)
       const assets = await collectAssets(m, ctx.platform)
       await writeFile(file, exportBundle(serializeManifest(m), assets))
       console.log(`exported ${m.profiles.length} profiles + ${Object.keys(assets).length} asset files to ${file}`)

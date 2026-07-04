@@ -1,14 +1,14 @@
 import type { Command } from 'commander'
 import {
-  discoverProfiles, buildManifest, loadManifest, saveManifest, planApply, executeApply,
+  discoverProfiles, buildManifest, saveManifest, planApply, executeApply,
 } from '@ccprofiles/core'
-import type { CliContext } from '../context.js'
+import { requireManifest, type CliContext } from '../context.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
 export function registerManifestCommands(program: Command, ctx: CliContext): void {
   program.command('status').description('show live-vs-manifest drift').action(async () => {
-    const m = await loadManifest(ctx.manifestRoot)
+    const m = await requireManifest(ctx)
     const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
     if (actions.length === 0) { console.log('in sync'); return }
     const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: true })
@@ -18,7 +18,7 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
   program.command('apply').description('apply manifest to live configs')
     .option('--dry-run')
     .action(async (opts: { dryRun?: boolean }) => {
-      const m = await loadManifest(ctx.manifestRoot)
+      const m = await requireManifest(ctx)
       const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
       if (actions.length === 0) { console.log('in sync — nothing to do'); return }
       const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!opts.dryRun })
@@ -35,7 +35,7 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
   program.command('create <name>').description('create a new profile')
     .option('--from <profile>', 'copy mcp list and links from an existing profile')
     .action(async (name: string, opts: { from?: string }) => {
-      const m = await loadManifest(ctx.manifestRoot)
+      const m = await requireManifest(ctx)
       if (m.profiles.some(p => p.name === name)) throw new Error(`profile exists: ${name}`)
       const src = opts.from ? m.profiles.find(p => p.name === opts.from) : null
       if (opts.from && !src) throw new Error(`unknown profile: ${opts.from}`)
