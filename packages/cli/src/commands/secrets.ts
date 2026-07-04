@@ -20,6 +20,34 @@ const KEY_VARS = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUT
 const MIGRATE_RE_POSIX = new RegExp(`^(\\s*(?:export\\s+)?(${KEY_VARS.join('|')})\\s*=\\s*)"?(sk-[A-Za-z0-9_-]+)"?(.*)$`)
 const MIGRATE_RE_PWSH = new RegExp(`^(\\s*\\$env:(${KEY_VARS.join('|')})\\s*=\\s*)"?(sk-[A-Za-z0-9_-]+)"?(.*)$`)
 
+/** Move plaintext keys out of the shell rc file into the secrets store. Shared by the CLI and the UI API. */
+export async function migrateRcSecrets(ctx: CliContext, opts: { dryRun?: boolean } = {}): Promise<string[]> {
+  const rcFile = ctx.platform.rcFile
+  if (!existsSync(rcFile)) return []
+  const store = await secretsStore(ctx)
+  const lines = (await readFile(rcFile, 'utf8')).split('\n')
+  const migrated: string[] = []
+  const out: string[] = []
+  for (const line of lines) {
+    const pwsh = line.match(MIGRATE_RE_PWSH)
+    const posix = pwsh ? null : line.match(MIGRATE_RE_POSIX)
+    const match = pwsh ?? posix
+    if (!match) { out.push(line); continue }
+    const [, prefix, varName, secretValue, suffix] = match
+    const secretName = varName.toLowerCase().replaceAll('_', '-')
+    if (!opts.dryRun) await store.set(secretName, secretValue)
+    out.push(pwsh
+      ? `${prefix}(ccprofiles secrets get ${secretName})${suffix}`
+      : `${prefix}"$(ccprofiles secrets get ${secretName})"${suffix}`)
+    migrated.push(secretName)
+  }
+  if (migrated.length && !opts.dryRun) {
+    await backupFiles([rcFile], ctx.backupRoot, new Date().toISOString().replace(/[:.]/g, '-'))
+    await atomicWrite(rcFile, out.join('\n'))
+  }
+  return migrated
+}
+
 export function registerSecretsCommands(program: Command, ctx: CliContext): void {
   const sec = program.command('secrets').description('manage secrets (values never stored in configs)')
 
@@ -49,30 +77,8 @@ export function registerSecretsCommands(program: Command, ctx: CliContext): void
   })
 
   sec.command('migrate').option('--dry-run').action(async (opts: { dryRun?: boolean }) => {
-    const rcFile = ctx.platform.rcFile
-    if (!existsSync(rcFile)) { console.log('no rc file found'); return }
-    const store = await secretsStore(ctx)
-    const lines = (await readFile(rcFile, 'utf8')).split('\n')
-    const migrated: string[] = []
-    const out = [] as string[]
-    for (const line of lines) {
-      const pwsh = line.match(MIGRATE_RE_PWSH)
-      const posix = pwsh ? null : line.match(MIGRATE_RE_POSIX)
-      const match = pwsh ?? posix
-      if (!match) { out.push(line); continue }
-      const [, prefix, varName, secretValue, suffix] = match
-      const secretName = varName.toLowerCase().replaceAll('_', '-')
-      if (!opts.dryRun) await store.set(secretName, secretValue)
-      out.push(pwsh
-        ? `${prefix}(ccprofiles secrets get ${secretName})${suffix}`
-        : `${prefix}"$(ccprofiles secrets get ${secretName})"${suffix}`)
-      migrated.push(secretName)
-    }
+    const migrated = await migrateRcSecrets(ctx, opts)
     if (migrated.length === 0) { console.log('no plaintext keys found'); return }
-    if (!opts.dryRun) {
-      await backupFiles([rcFile], ctx.backupRoot, new Date().toISOString().replace(/[:.]/g, '-'))
-      await atomicWrite(rcFile, out.join('\n'))
-    }
     for (const n of migrated) console.log(`${opts.dryRun ? '[dry-run] ' : ''}migrated ${n}`)
   })
 }
