@@ -19,7 +19,7 @@ Requires **Node ≥ 20** (you have it — Claude Code needs it too).
 
 ```bash
 # from source (not yet on npm)
-git clone https://github.com/YOURNAME/ccprofiles && cd ccprofiles
+git clone https://github.com/tmfadhlul/claude-code-profile.git && cd claude-code-profile
 npm install && npm run build
 npm link --workspace ccprofiles   # or: cd packages/cli && npm link
 ```
