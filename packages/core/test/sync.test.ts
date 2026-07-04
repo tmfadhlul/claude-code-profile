@@ -79,6 +79,6 @@ describe('bundle', () => {
     expect(() => importBundle(Buffer.from('nope'))).toThrow(/not a ccprofiles bundle/)
   })
   it('unreachable server gives an actionable error', async () => {
-    await expect(pairWithServer('127.0.0.1', 1, '111111', 'x')).rejects.toThrow(/cannot reach 127\.0\.0\.1:1.*ccp serve/)
+    await expect(pairWithServer('127.0.0.1', 1, '111111', 'x')).rejects.toThrow(/cannot reach 127\.0\.0\.1:1.*ccprofiles serve/)
   })
 })

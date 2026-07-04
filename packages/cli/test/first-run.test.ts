@@ -31,10 +31,10 @@ const CASES: string[][] = [
 
 describe('first run without a manifest', () => {
   for (const args of CASES) {
-    it(`ccp ${args.join(' ')} points to adopt`, async () => {
+    it(`ccprofiles ${args.join(' ')} points to adopt`, async () => {
       const { err } = await run(...args)
       expect(err).not.toBeNull()
-      expect(err!.message).toMatch(/no manifest yet.*ccp adopt --yes/s)
+      expect(err!.message).toMatch(/no manifest yet.*ccprofiles adopt --yes/s)
       expect(err!.message).not.toMatch(/ENOENT/)
     })
   }

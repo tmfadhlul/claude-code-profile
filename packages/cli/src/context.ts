@@ -37,13 +37,13 @@ export function makeContext(env: NodeJS.ProcessEnv = process.env): CliContext {
 /** Load the manifest, or explain how to create one — never a raw ENOENT. */
 export async function requireManifest(ctx: CliContext): Promise<Manifest> {
   if (!existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
-    throw new Error('no manifest yet — run: ccp adopt --yes  (builds one from your existing .claude* profiles)')
+    throw new Error('no manifest yet — run: ccprofiles adopt --yes  (builds one from your existing .claude* profiles)')
   }
   return loadManifest(ctx.manifestRoot)
 }
 
 export function buildProgram(ctx: CliContext): Command {
-  const program = new Command('ccp').description('Claude Code profile manager')
+  const program = new Command('ccprofiles').description('Manage multiple Claude Code accounts/profiles (alias: clp)')
   program.exitOverride() // throw instead of process.exit — required for tests
   registerProfileCommands(program, ctx)
   registerMcpCommands(program, ctx)

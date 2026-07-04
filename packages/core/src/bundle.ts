@@ -11,8 +11,8 @@ export function importBundle(buf: Buffer): Bundle {
   try {
     parsed = JSON.parse(gunzipSync(buf).toString('utf8'))
   } catch {
-    throw new Error('not a ccprofiles bundle (expected a file created by: ccp export)')
+    throw new Error('not a ccprofiles bundle (expected a file created by: ccprofiles export)')
   }
-  if (parsed?.v !== 1 || typeof parsed.manifestYaml !== 'string') throw new Error('not a ccprofiles bundle (expected a file created by: ccp export)')
+  if (parsed?.v !== 1 || typeof parsed.manifestYaml !== 'string') throw new Error('not a ccprofiles bundle (expected a file created by: ccprofiles export)')
   return parsed as Bundle
 }

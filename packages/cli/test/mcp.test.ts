@@ -23,7 +23,7 @@ beforeEach(async () => {
   await run('adopt', '--yes')
 })
 
-describe('ccp mcp', () => {
+describe('ccprofiles mcp', () => {
   it('list shows drift matrix', async () => {
     const out = await run('mcp', 'list')
     expect(out).toContain('playwright')

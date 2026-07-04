@@ -17,7 +17,7 @@ export function envKeyLine(name: string, value: string): string {
 
 /** What a migrated secret reference looks like on this platform. */
 export function secretRef(name: string): string {
-  return IS_WIN ? `(ccp secrets get ${name})` : `$(ccp secrets get ${name})`
+  return IS_WIN ? `(ccprofiles secrets get ${name})` : `$(ccprofiles secrets get ${name})`
 }
 
 export async function seedRc(home: string, content: string): Promise<string> {

@@ -70,7 +70,7 @@ export async function startSyncServer(
       if (payload === null) return send(res, 400, { error: 'invalid request body' })
 
       if (req.url === '/pair') {
-        if (locked) return send(res, 429, { error: 'pairing locked after too many failed attempts — restart ccp serve' })
+        if (locked) return send(res, 429, { error: 'pairing locked after too many failed attempts — restart ccprofiles serve' })
         const { privateKey, publicRaw } = handshakeKeys()
         const salt = newSalt()
         const key = deriveSharedKey(privateKey, payload.clientPub, salt)
@@ -80,7 +80,7 @@ export async function startSyncServer(
       }
 
       if (req.url === '/pair/confirm') {
-        if (locked) return send(res, 429, { error: 'pairing locked after too many failed attempts — restart ccp serve' })
+        if (locked) return send(res, 429, { error: 'pairing locked after too many failed attempts — restart ccprofiles serve' })
         const pending = typeof payload.handshakeId === 'string' ? handshakes.get(payload.handshakeId) : undefined
         if (!pending) return send(res, 400, { error: 'no pending handshake (call /pair first)' })
         handshakes.delete(payload.handshakeId) // one shot per handshake
