@@ -1,5 +1,6 @@
 import { Command } from 'commander'
-import { detectPlatform, type Platform } from '@ccprofiles/core'
+import { detectPlatform, loadManifest, type Manifest, type Platform } from '@ccprofiles/core'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerProfileCommands } from './commands/profiles.js'
 import { registerMcpCommands } from './commands/mcp.js'
@@ -31,6 +32,14 @@ export function makeContext(env: NodeJS.ProcessEnv = process.env): CliContext {
     backupRoot: join(manifestRoot, 'backups'),
     env,
   }
+}
+
+/** Load the manifest, or explain how to create one — never a raw ENOENT. */
+export async function requireManifest(ctx: CliContext): Promise<Manifest> {
+  if (!existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
+    throw new Error('no manifest yet — run: ccp adopt --yes  (builds one from your existing .claude* profiles)')
+  }
+  return loadManifest(ctx.manifestRoot)
 }
 
 export function buildProgram(ctx: CliContext): Command {

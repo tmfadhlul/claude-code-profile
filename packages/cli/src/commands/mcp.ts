@@ -1,8 +1,8 @@
 import type { Command } from 'commander'
 import {
-  discoverProfiles, loadManifest, saveManifest, planApply, executeApply, type Manifest,
+  discoverProfiles, saveManifest, planApply, executeApply, type Manifest,
 } from '@ccprofiles/core'
-import type { CliContext } from '../context.js'
+import { requireManifest, type CliContext } from '../context.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
@@ -23,7 +23,7 @@ export function registerMcpCommands(program: Command, ctx: CliContext): void {
   const mcp = program.command('mcp').description('manage MCP servers across profiles')
 
   mcp.command('list').action(async () => {
-    const m = await loadManifest(ctx.manifestRoot)
+    const m = await requireManifest(ctx)
     const names = Object.keys(m.mcpServers).sort()
     const header = ' '.repeat(24) + m.profiles.map(p => p.name.padEnd(10)).join('')
     console.log(header)
@@ -37,7 +37,7 @@ export function registerMcpCommands(program: Command, ctx: CliContext): void {
     .option('--profile <p>').option('--all').option('--dry-run')
     .option('--command <cmd>').option('--args <csv>')
     .action(async (name: string, opts: any) => {
-      const m = await loadManifest(ctx.manifestRoot)
+      const m = await requireManifest(ctx)
       if (!m.mcpServers[name]) {
         if (!opts.command) throw new Error(`unknown server "${name}" — pass --command (and optionally --args) to define it`)
         m.mcpServers[name] = { command: opts.command, ...(opts.args ? { args: String(opts.args).split(',') } : {}) }
@@ -53,7 +53,7 @@ export function registerMcpCommands(program: Command, ctx: CliContext): void {
   mcp.command('rm <name>')
     .option('--profile <p>').option('--all').option('--dry-run')
     .action(async (name: string, opts: any) => {
-      const m = await loadManifest(ctx.manifestRoot)
+      const m = await requireManifest(ctx)
       for (const t of targets(m, opts)) {
         const pr = m.profiles.find(p => p.name === t)!
         pr.mcp = pr.mcp.filter(x => x !== name)
@@ -66,7 +66,7 @@ export function registerMcpCommands(program: Command, ctx: CliContext): void {
   mcp.command('sync')
     .requiredOption('--from <p>').option('--to <csv>').option('--all').option('--dry-run')
     .action(async (opts: any) => {
-      const m = await loadManifest(ctx.manifestRoot)
+      const m = await requireManifest(ctx)
       const src = m.profiles.find(p => p.name === opts.from)
       if (!src) throw new Error(`unknown profile: ${opts.from}`)
       const to = opts.all
