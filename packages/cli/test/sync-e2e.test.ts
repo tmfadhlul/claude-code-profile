@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startSyncServer, parseManifest, serializeManifest } from 'ccprofiles-core'
 import { buildProgram, makeContext } from '../src/context.js'
+import { rcFileFor } from './helpers.js'
 
 let macHome: string   // "mac" — the master device, runs the server
 let winHome: string   // "second machine" — pairs and pulls
@@ -73,7 +74,7 @@ describe('cross-device sync', () => {
     expect(existsSync(join(winHome, '.claude-office', '.claude.json'))).toBe(true)
     const office = JSON.parse(await readFile(join(winHome, '.claude-office', '.claude.json'), 'utf8'))
     expect(Object.keys(office.mcpServers)).toEqual(['playwright'])
-    expect(await readFile(join(winHome, '.zshrc'), 'utf8')).toContain('cl-office()')
+    expect(await readFile(rcFileFor(winHome), 'utf8')).toContain('cl-office')
     expect(await readFile(join(winHome, '.claude', 'skills', 'graphify', 'SKILL.md'), 'utf8')).toBe('# graphify')
 
     // secret arrived in the client's store

@@ -23,7 +23,11 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
     const links: Record<string, string> = {}
     for (const child of await readdir(dir, { withFileTypes: true })) {
       if (child.isSymbolicLink()) {
-        try { links[child.name] = await readlink(join(dir, child.name)) } catch { /* skip */ }
+        try {
+          // windows junctions read back as \\?\C:\... with a trailing separator — normalize
+          links[child.name] = (await readlink(join(dir, child.name)))
+            .replace(/^\\\\\?\\/, '').replace(/([\\/])+$/, '')
+        } catch { /* skip */ }
       }
     }
     out.push({

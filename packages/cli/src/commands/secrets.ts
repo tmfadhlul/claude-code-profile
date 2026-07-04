@@ -16,7 +16,9 @@ export async function secretsStore(ctx: CliContext): Promise<SecretsStore> {
 }
 
 const KEY_VARS = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN']
-const MIGRATE_RE = new RegExp(`^(\\s*(?:export\\s+)?(${KEY_VARS.join('|')})\\s*=\\s*)"?(sk-[A-Za-z0-9_-]+)"?(.*)$`)
+// posix: export VAR="sk-..."   powershell: $env:VAR = "sk-..."
+const MIGRATE_RE_POSIX = new RegExp(`^(\\s*(?:export\\s+)?(${KEY_VARS.join('|')})\\s*=\\s*)"?(sk-[A-Za-z0-9_-]+)"?(.*)$`)
+const MIGRATE_RE_PWSH = new RegExp(`^(\\s*\\$env:(${KEY_VARS.join('|')})\\s*=\\s*)"?(sk-[A-Za-z0-9_-]+)"?(.*)$`)
 
 export function registerSecretsCommands(program: Command, ctx: CliContext): void {
   const sec = program.command('secrets').description('manage secrets (values never stored in configs)')
@@ -54,12 +56,16 @@ export function registerSecretsCommands(program: Command, ctx: CliContext): void
     const migrated: string[] = []
     const out = [] as string[]
     for (const line of lines) {
-      const match = line.match(MIGRATE_RE)
+      const pwsh = line.match(MIGRATE_RE_PWSH)
+      const posix = pwsh ? null : line.match(MIGRATE_RE_POSIX)
+      const match = pwsh ?? posix
       if (!match) { out.push(line); continue }
       const [, prefix, varName, secretValue, suffix] = match
       const secretName = varName.toLowerCase().replaceAll('_', '-')
       if (!opts.dryRun) await store.set(secretName, secretValue)
-      out.push(`${prefix}"$(ccp secrets get ${secretName})"${suffix}`)
+      out.push(pwsh
+        ? `${prefix}(ccp secrets get ${secretName})${suffix}`
+        : `${prefix}"$(ccp secrets get ${secretName})"${suffix}`)
       migrated.push(secretName)
     }
     if (migrated.length === 0) { console.log('no plaintext keys found'); return }
