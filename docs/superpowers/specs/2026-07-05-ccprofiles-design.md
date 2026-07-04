@@ -124,8 +124,8 @@ Launcher functions fetch secrets at launch (e.g. `ANTHROPIC_API_KEY="$(ccp secre
 
 ## LAN sync
 
-- `ccp serve` starts an ephemeral HTTPS server (self-signed cert generated at first run; cert fingerprint is the device identity).
-- `ccp pair <ip>`: server displays a 6-digit PIN; client sends PIN over TLS; on match both sides store `{name, fingerprint, authToken}` — fingerprint pinned so future connections refuse a different cert (defeats LAN MITM).
+- `ccp serve` starts an ephemeral HTTP server; confidentiality/integrity come from payload encryption, not TLS. *(Implementation note: replaced the original self-signed-TLS design — Node cannot mint X.509 certs without openssl, which isn't guaranteed on native Windows. Equivalent security with zero dependencies:)*
+- `ccp pair <ip> --pin <pin>`: X25519 ECDH key exchange, authenticated both ways by HMAC over the handshake keyed with the 6-digit PIN shown on the serving device — a LAN MITM without the PIN cannot complete pairing, and the client also verifies the server. Both sides store `{name, token, pairingKey}`; all subsequent payloads are AES-256-GCM sealed with the pairing key.
 - `ccp sync --from <device> [--with-secrets] [--dry-run]`: pulls the peer's manifest + assets, shows a diff summary, applies locally (with backups). `--with-secrets` additionally transfers secret values over the pinned TLS channel directly into the local keychain — never written to disk.
 - `ccp devices`: lists paired devices; mDNS auto-discovery is a stretch goal — v1 ships manual IP + paired-device cache (last known IP retried first).
 - Serve is on-demand (foreground, Ctrl-C to stop). No daemon in v1.
