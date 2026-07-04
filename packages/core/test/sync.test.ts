@@ -57,7 +57,10 @@ describe('bundle', () => {
     const buf = exportBundle('version: 1', { 'hub/skills/a.md': 'hi' })
     expect(importBundle(buf)).toEqual({ v: 1, manifestYaml: 'version: 1', assets: { 'hub/skills/a.md': 'hi' } })
   })
-  it('rejects garbage', () => {
-    expect(() => importBundle(Buffer.from('nope'))).toThrow()
+  it('rejects garbage with a friendly message', () => {
+    expect(() => importBundle(Buffer.from('nope'))).toThrow(/not a ccprofiles bundle/)
+  })
+  it('unreachable server gives an actionable error', async () => {
+    await expect(pairWithServer('127.0.0.1', 1, '111111', 'x')).rejects.toThrow(/cannot reach 127\.0\.0\.1:1.*ccp serve/)
   })
 })

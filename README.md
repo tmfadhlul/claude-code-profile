@@ -55,6 +55,11 @@ ccp sync --from mac --with-secrets
 
 Manifest, MCP servers, skills, commands, launcher functions, and (opt-in) secrets all arrive — rendered for the local OS: PowerShell profile functions and junctions on Windows, `.zshrc`/`.bashrc` functions and symlinks elsewhere.
 
+Two things intentionally don't travel:
+
+- **OAuth sessions** — you still run `/login` once per account on the new machine (Anthropic session state is machine-bound; syncing it would be wrong).
+- The **`default` profile has no `cl-*` launcher** — it's what plain `claude` already launches; only the named profiles get launcher functions.
+
 ## How it works
 
 Three layers of state:

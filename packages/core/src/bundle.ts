@@ -7,7 +7,12 @@ export function exportBundle(manifestYaml: string, assets: Record<string, string
 }
 
 export function importBundle(buf: Buffer): Bundle {
-  const parsed = JSON.parse(gunzipSync(buf).toString('utf8'))
-  if (parsed?.v !== 1 || typeof parsed.manifestYaml !== 'string') throw new Error('not a ccprofiles bundle')
+  let parsed: any
+  try {
+    parsed = JSON.parse(gunzipSync(buf).toString('utf8'))
+  } catch {
+    throw new Error('not a ccprofiles bundle (expected a file created by: ccp export)')
+  }
+  if (parsed?.v !== 1 || typeof parsed.manifestYaml !== 'string') throw new Error('not a ccprofiles bundle (expected a file created by: ccp export)')
   return parsed as Bundle
 }
