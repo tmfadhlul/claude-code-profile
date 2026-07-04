@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { SecretsStore, FileBackend, defaultBackend, backupFiles, atomicWrite } from '@ccprofiles/core'
+import { SecretsStore, FileBackend, defaultBackend, backupFiles, atomicWrite } from 'ccprofiles-core'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import type { CliContext } from '../context.js'

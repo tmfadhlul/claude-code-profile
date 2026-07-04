@@ -2,7 +2,7 @@ import type { Command } from 'commander'
 import {
   exportBundle, importBundle, collectAssets, writeAssets, parseManifest, serializeManifest,
   saveManifest, discoverProfiles, planApply, executeApply, backupFiles,
-} from '@ccprofiles/core'
+} from 'ccprofiles-core'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { requireManifest, type CliContext } from '../context.js'

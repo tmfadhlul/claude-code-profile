@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { detectPlatform, loadManifest, type Manifest, type Platform } from '@ccprofiles/core'
+import { detectPlatform, loadManifest, type Manifest, type Platform } from 'ccprofiles-core'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerProfileCommands } from './commands/profiles.js'

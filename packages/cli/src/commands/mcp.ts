@@ -1,7 +1,7 @@
 import type { Command } from 'commander'
 import {
   discoverProfiles, saveManifest, planApply, executeApply, type Manifest,
-} from '@ccprofiles/core'
+} from 'ccprofiles-core'
 import { requireManifest, type CliContext } from '../context.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }

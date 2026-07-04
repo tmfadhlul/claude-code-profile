@@ -1,8 +1,16 @@
 {
-  "name": "@ccprofiles/core",
+  "name": "ccprofiles-core",
   "version": "0.1.0",
+  "description": "Core library for ccprofiles — discovery, manifest, secrets, apply, and LAN sync for Claude Code multi-account setups",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/tmfadhlul/claude-code-profile.git", "directory": "packages/core" },
+  "homepage": "https://github.com/tmfadhlul/claude-code-profile#readme",
+  "bugs": "https://github.com/tmfadhlul/claude-code-profile/issues",
+  "keywords": ["claude-code", "claude", "profiles", "mcp", "config-management"],
+  "engines": { "node": ">=20" },
   "dependencies": { "yaml": "^2.5.0", "zod": "^3.23.0" }
 }
