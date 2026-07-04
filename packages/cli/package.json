@@ -1,0 +1,7 @@
+{
+  "name": "ccprofiles",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "ccprofiles": "./dist/index.js", "ccp": "./dist/index.js" },
+  "dependencies": { "@ccprofiles/core": "0.1.0", "commander": "^12.1.0" }
+}
