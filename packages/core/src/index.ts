@@ -1,3 +1,5 @@
 export * from './platform.js'
 export * from './manifest.js'
 export * from './discovery.js'
+export * from './adopt.js'
+export * from './rcblock.js'
