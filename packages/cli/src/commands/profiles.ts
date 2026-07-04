@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { discoverProfiles, buildManifest, saveManifest, loadManifest } from '@ccprofiles/core'
+import { discoverProfiles, buildManifest, saveManifest, loadManifest, ensureRootGitignore } from '@ccprofiles/core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -27,6 +27,7 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
       if (!existsSync(join(ctx.manifestRoot, '.git'))) {
         try { execFileSync('git', ['init', ctx.manifestRoot], { stdio: 'ignore' }) } catch { /* git optional */ }
       }
+      await ensureRootGitignore(ctx.manifestRoot)
       await saveManifest(ctx.manifestRoot, manifest)
       console.log(`Manifest written to ${join(ctx.manifestRoot, 'manifest.yaml')}`)
     })

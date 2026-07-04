@@ -5,6 +5,8 @@ import { registerProfileCommands } from './commands/profiles.js'
 import { registerMcpCommands } from './commands/mcp.js'
 import { registerSecretsCommands } from './commands/secrets.js'
 import { registerManifestCommands } from './commands/manifest.js'
+import { registerSyncCommands } from './commands/sync.js'
+import { registerBundleCommands } from './commands/bundle.js'
 
 export interface CliContext {
   home: string
@@ -38,5 +40,7 @@ export function buildProgram(ctx: CliContext): Command {
   registerMcpCommands(program, ctx)
   registerSecretsCommands(program, ctx)
   registerManifestCommands(program, ctx)
+  registerSyncCommands(program, ctx)
+  registerBundleCommands(program, ctx)
   return program
 }
