@@ -5,7 +5,8 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "test": "vitest run",
-    "build": "tsc -b packages/core packages/cli"
+    "build": "tsc -b packages/core packages/cli && npm run build:ui && node scripts/copy-ui.mjs",
+    "build:ui": "npm run build -w @ccprofiles/ui"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
