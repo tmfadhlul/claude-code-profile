@@ -13,16 +13,31 @@ Run Claude Code with several accounts — personal subscription, work OAuth, API
 - 📦 **Offline bundles** for the no-network case (`ccp export setup.ccb`)
 - 🛟 **Safe by design**: surgical config edits only, automatic backups, `--dry-run` everywhere, never touches your sessions/history
 
+## Install
+
+Requires **Node ≥ 20** (you have it — Claude Code needs it too).
+
+```bash
+# from source (not yet on npm)
+git clone https://github.com/YOURNAME/ccprofiles && cd ccprofiles
+npm install && npm run build
+npm link --workspace ccprofiles   # or: cd packages/cli && npm link
+```
+
+> Using nvm? `npm link` installs into the *active* node version — re-link after `nvm use <other>`.
+
+Once published: `npm install -g ccprofiles`.
+
 ## Quickstart
 
 ```bash
-npm install -g ccprofiles
-
-ccp adopt --yes          # scan ~/.claude* and build the manifest
+ccp adopt --yes          # REQUIRED FIRST: scan ~/.claude* and build the manifest
 ccp list                 # see all your profiles
 ccp doctor               # find broken links & plaintext keys
 ccp secrets migrate      # move API keys from .zshrc into the OS keychain
 ```
+
+Everything except `list`, `adopt`, and `doctor` needs the manifest, so `ccp adopt --yes` is always step one — commands will remind you if you skip it.
 
 ### Manage MCP servers
 
@@ -66,7 +81,9 @@ Three layers of state:
 
 1. **Live state** — your actual `.claude*` dirs and shell rc files. Claude Code owns these; ccprofiles edits only the keys it manages (`mcpServers`, its marked rc block, its links).
 2. **Manifest** — `~/.ccprofiles/manifest.yaml`, a platform-neutral declaration (paths templated as `{home}`, secrets referenced as `secret://name`). Versioned with local git commits; safe to share.
-3. **Secrets store** — per-machine keychain. Values never appear in the manifest, bundles, or rc files; launchers resolve them at run time via `ccp secrets get`.
+3. **Secrets store** — per-machine keychain: macOS Keychain, Linux `secret-tool` (libsecret), or an AES-256-GCM encrypted file as fallback (native Windows and headless Linux — set `CCPROFILES_PASSPHRASE` in your environment for it). Values never appear in the manifest, bundles, or rc files; launchers resolve them at run time via `ccp secrets get`.
+
+> ⚠️ `ccp secrets set <name> <value>` takes the value as an argument, which lands in your shell history — prefer `ccp secrets migrate` (reads from rc files) or clear history after. Interactive prompting is on the roadmap.
 
 `ccp status` shows drift between manifest and live; `ccp apply` reconciles (with backups under `~/.ccprofiles/backups/`); `ccp snapshot` goes the other way (live → manifest).
 
@@ -85,7 +102,25 @@ Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN sh
 | Sync | `serve [--allow-secrets]` · `pair <host> --port n --pin p` · `devices` · `sync --from dev [--with-secrets]` |
 | Bundle | `export <file>` · `import <file>` |
 
-All mutating commands support `--dry-run`.
+All mutating commands support `--dry-run`. Every mutation backs up the files it touches to `~/.ccprofiles/backups/<timestamp>/` first.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `error: no manifest yet` | Run `ccp adopt --yes` first — it builds the manifest from your existing profiles |
+| `zsh: command not found: ccp` | Not linked/installed — see Install; if just linked, run `rehash` |
+| ``cannot reach <host> — is `ccp serve` running?`` | Start `ccp serve` on the other device; check you're on the same network and the port matches |
+| `encrypted-file backend requires a passphrase` | Set `CCPROFILES_PASSPHRASE` (Windows / Linux without libsecret) |
+| Profile shows account `-` after sync | Expected — run `/login` inside that profile once; OAuth sessions don't sync |
+| Something went wrong after `apply` | Restore from `~/.ccprofiles/backups/<latest>/` |
+
+## Roadmap
+
+- Web dashboard on top of `@ccprofiles/core`
+- mDNS auto-discovery for `ccp devices`
+- Windows Credential Manager (DPAPI) secrets backend
+- Interactive prompts (`secrets set` without echoing, `adopt` confirmation)
 
 ## Development
 
