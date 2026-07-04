@@ -13,12 +13,14 @@ function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-')
 export function registerSyncCommands(program: Command, ctx: CliContext): void {
   program.command('serve').description('serve this device for pairing/sync')
     .option('--port <n>', 'port (default: random)', v => parseInt(v, 10))
+    .option('--host <ip>', 'interface to bind (default: 0.0.0.0 — all interfaces; set your LAN IP to restrict)')
     .option('--allow-secrets', 'allow paired devices to pull secret values')
-    .action(async (opts: { port?: number; allowSecrets?: boolean }) => {
+    .action(async (opts: { port?: number; host?: string; allowSecrets?: boolean }) => {
       const server = await startSyncServer({
         manifestRoot: ctx.manifestRoot,
         platform: ctx.platform,
         port: opts.port,
+        host: opts.host,
         allowSecrets: opts.allowSecrets,
         secretValues: async names => {
           const store = await secretsStore(ctx)
@@ -31,8 +33,10 @@ export function registerSyncCommands(program: Command, ctx: CliContext): void {
           return out
         },
       })
-      console.log(`ccprofiles sync server on port ${server.port}`)
+      console.log(`ccprofiles sync server on ${server.host}:${server.port}`)
+      if (server.host === '0.0.0.0') console.log('(reachable from all network interfaces — pass --host <lan-ip> to restrict)')
       console.log(`pairing PIN: ${server.pin}`)
+      console.log('(pairing locks after 5 wrong PINs — restart serve to reset)')
       if (opts.allowSecrets) console.log('secrets transfer: ENABLED for paired devices')
       console.log('Ctrl-C to stop')
       await new Promise(() => { /* run until killed */ })
