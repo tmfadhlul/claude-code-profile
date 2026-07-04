@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeContext } from '../src/context.js'
 import { callApi } from './ui-helpers.js'
+import { envKeyLine, seedRc } from './helpers.js'
 
 let home: string, ctx: any
 beforeEach(async () => {
@@ -27,7 +28,7 @@ describe('ui api: secrets', () => {
     expect(res._status).toBe(404)
   })
   it('migrate moves rc keys', async () => {
-    await writeFile(join(home, '.zshrc'), 'export ANTHROPIC_API_KEY="sk-ant-LEGACY"\n')
+    await seedRc(home, envKeyLine('ANTHROPIC_API_KEY', 'sk-ant-LEGACY') + '\n')
     const res = await callApi(ctx, 'POST', '/api/secrets/migrate')
     expect(res._json.migrated).toContain('anthropic-api-key')
     expect((await callApi(ctx, 'GET', '/api/secrets/anthropic-api-key'))._json.value).toBe('sk-ant-LEGACY')
