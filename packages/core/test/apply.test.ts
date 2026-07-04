@@ -44,8 +44,11 @@ describe('planApply + executeApply', () => {
     expect(cfg.otherKey).toBe('preserve-me')
     expect(Object.keys(cfg.mcpServers)).toEqual(['playwright'])
     expect(existsSync(join(home, '.claude-new', '.claude.json'))).toBe(true)
-    expect(await readlink(join(home, '.claude-new', 'skills'))).toBe(join(home, '.claude', 'skills'))
-    expect((await readFile(p.rcFile, 'utf8'))).toContain('cl-new()')
+    // windows junctions read back with a \\?\ prefix and may add a trailing separator
+    const linkTarget = (await readlink(join(home, '.claude-new', 'skills')))
+      .replace(/^\\\\\?\\/, '').replace(/[\\/]+$/, '')
+    expect(linkTarget).toBe(join(home, '.claude', 'skills'))
+    expect((await readFile(p.rcFile, 'utf8'))).toContain('cl-new')
     expect(res.backupDir).not.toBeNull()
   })
 

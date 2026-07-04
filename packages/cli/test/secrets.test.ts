@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mkdtemp, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildProgram, makeContext } from '../src/context.js'
+import { envKeyLine, secretRef, seedRc } from './helpers.js'
 
 let home: string
 async function run(...args: string[]): Promise<string> {
@@ -25,14 +26,13 @@ describe('ccp secrets', () => {
     expect(await run('secrets', 'list')).not.toContain('api-key')
   })
   it('migrate moves plaintext keys out of rc', async () => {
-    const rc = join(home, '.zshrc')
-    await writeFile(rc, 'export ANTHROPIC_API_KEY="sk-ant-api03-SECRET"\nalias x=y\n')
+    const rc = await seedRc(home, envKeyLine('ANTHROPIC_API_KEY', 'sk-ant-api03-SECRET') + '\n# keep me\n')
     const out = await run('secrets', 'migrate')
     expect(out).toContain('anthropic-api-key')
     const after = await readFile(rc, 'utf8')
     expect(after).not.toContain('sk-ant-api03-SECRET')
-    expect(after).toContain('$(ccp secrets get anthropic-api-key)')
-    expect(after).toContain('alias x=y')
+    expect(after).toContain(secretRef('anthropic-api-key'))
+    expect(after).toContain('# keep me')
     expect(await run('secrets', 'get', 'anthropic-api-key')).toBe('sk-ant-api03-SECRET')
   })
 })

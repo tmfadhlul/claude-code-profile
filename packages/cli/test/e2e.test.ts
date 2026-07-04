@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildProgram, makeContext } from '../src/context.js'
+import { envKeyLine, rcFileFor, seedRc } from './helpers.js'
 
 let home: string
 async function run(...args: string[]): Promise<string> {
@@ -29,7 +30,7 @@ beforeAll(async () => {
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
     oauthAccount: { emailAddress: 'me@office.co' },
   }))
-  await writeFile(join(home, '.zshrc'), 'export ANTHROPIC_API_KEY="sk-ant-api03-LEGACY"\n')
+  await seedRc(home, envKeyLine('ANTHROPIC_API_KEY', 'sk-ant-api03-LEGACY') + '\n')
 })
 
 describe('e2e: adopt → migrate → mcp sync → apply → doctor', () => {
@@ -38,7 +39,7 @@ describe('e2e: adopt → migrate → mcp sync → apply → doctor', () => {
     expect(existsSync(join(home, '.ccprofiles', 'manifest.yaml'))).toBe(true)
 
     await run('secrets', 'migrate')
-    expect(await readFile(join(home, '.zshrc'), 'utf8')).not.toContain('sk-ant-api03-LEGACY')
+    expect(await readFile(rcFileFor(home), 'utf8')).not.toContain('sk-ant-api03-LEGACY')
 
     await run('mcp', 'sync', '--from', 'default', '--to', 'office')
     const office = JSON.parse(await readFile(join(home, '.claude-office', '.claude.json'), 'utf8'))
