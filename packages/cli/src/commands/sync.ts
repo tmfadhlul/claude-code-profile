@@ -64,7 +64,7 @@ export function registerSyncCommands(program: Command, ctx: CliContext): void {
     .option('--dry-run')
     .action(async (opts: { from: string; withSecrets?: boolean; dryRun?: boolean }) => {
       const device = (await loadDevices(ctx.manifestRoot)).find(d => d.name === opts.from)
-      if (!device) throw new Error(`unknown device: ${opts.from} — run: ccp pair <host> --port <p> --pin <pin>`)
+      if (!device) throw new Error(`unknown device: ${opts.from} — run: ccprofiles pair <host> --port <p> --pin <pin>`)
       const { manifestYaml, assets } = await fetchRemote(device)
       const m = parseManifest(manifestYaml) // validate before touching anything
       console.log(`pulled manifest: ${m.profiles.length} profiles, ${Object.keys(m.mcpServers).length} mcp servers, ${Object.keys(assets).length} asset files`)

@@ -17,7 +17,7 @@ async function run(...args: string[]): Promise<string> {
 
 beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'ccp-sec-')) })
 
-describe('ccp secrets', () => {
+describe('ccprofiles secrets', () => {
   it('set/get/list/rm round-trip', async () => {
     await run('secrets', 'set', 'api-key', 'sk-ant-xyz')
     expect(await run('secrets', 'get', 'api-key')).toBe('sk-ant-xyz')

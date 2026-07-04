@@ -23,7 +23,7 @@ beforeEach(async () => {
   }))
 })
 
-describe('ccp list', () => {
+describe('ccprofiles list', () => {
   it('shows discovered profiles', async () => {
     const out = await run('list')
     expect(out).toContain('default')
@@ -31,7 +31,7 @@ describe('ccp list', () => {
   })
 })
 
-describe('ccp adopt', () => {
+describe('ccprofiles adopt', () => {
   it('writes manifest with --yes', async () => {
     await run('adopt', '--yes')
     expect(existsSync(join(home, '.ccprofiles', 'manifest.yaml'))).toBe(true)

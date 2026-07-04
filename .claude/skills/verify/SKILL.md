@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Drive the ccp CLI end-to-end in a sandboxed home to verify changes without touching the real ~/.claude* setup or macOS keychain.
+description: Drive the ccprofiles CLI end-to-end in a sandboxed home to verify changes without touching the real ~/.claude* setup or macOS keychain.
 ---
 
 # Verifying ccprofiles

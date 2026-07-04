@@ -45,13 +45,13 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
     if (existsSync(ctx.platform.rcFile)) {
       const rc = readFileSync(ctx.platform.rcFile, 'utf8')
       const outsideBlock = rc.split('# >>> ccprofiles managed >>>')[0] + (rc.split('# <<< ccprofiles managed <<<')[1] ?? '')
-      if (/sk-ant-/.test(outsideBlock)) problems.push(`plaintext Anthropic key found in ${ctx.platform.rcFile} — run: ccp secrets migrate`)
+      if (/sk-ant-/.test(outsideBlock)) problems.push(`plaintext Anthropic key found in ${ctx.platform.rcFile} — run: ccprofiles secrets migrate`)
     }
     if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
       const m = await loadManifest(ctx.manifestRoot)
       for (const pr of m.profiles) {
         const dir = pr.dir.replace('{home}', ctx.home)
-        if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run: ccp apply`)
+        if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run: ccprofiles apply`)
       }
     }
     if (problems.length === 0) { console.log('ok: no problems found'); return }

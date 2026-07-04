@@ -27,7 +27,7 @@ function renderPosix(pr: ProfileDecl, p: Platform): string {
   const lines = [`${pr.launcher}() {`]
   for (const [k, v] of Object.entries(pr.env)) {
     lines.push(v.startsWith(SECRET_PREFIX)
-      ? `  export ${k}="$(ccp secrets get ${v.slice(SECRET_PREFIX.length)})"`
+      ? `  export ${k}="$(ccprofiles secrets get ${v.slice(SECRET_PREFIX.length)})"`
       : `  export ${k}="${escapePosix(v)}"`)
   }
   lines.push(`  CLAUDE_CONFIG_DIR="${profileDirExpr(pr, p)}" claude "$@"`, '}')
@@ -38,7 +38,7 @@ function renderPwsh(pr: ProfileDecl, p: Platform): string {
   const lines = [`function ${pr.launcher} {`]
   for (const [k, v] of Object.entries(pr.env)) {
     lines.push(v.startsWith(SECRET_PREFIX)
-      ? `  $env:${k} = (ccp secrets get ${v.slice(SECRET_PREFIX.length)})`
+      ? `  $env:${k} = (ccprofiles secrets get ${v.slice(SECRET_PREFIX.length)})`
       : `  $env:${k} = "${escapePwsh(v)}"`)
   }
   lines.push(`  $env:CLAUDE_CONFIG_DIR = "${profileDirExpr(pr, p)}"`, '  claude @args', '}')

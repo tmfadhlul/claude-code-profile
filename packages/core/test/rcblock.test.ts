@@ -21,7 +21,7 @@ describe('renderRcBlock', () => {
     const block = renderRcBlock(m, mac)
     expect(block).toContain(BEGIN_MARK)
     expect(block).toContain('cl-z() {')
-    expect(block).toContain('export ANTHROPIC_AUTH_TOKEN="$(ccp secrets get z-token)"')
+    expect(block).toContain('export ANTHROPIC_AUTH_TOKEN="$(ccprofiles secrets get z-token)"')
     expect(block).toContain('export ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"')
     expect(block).toContain('CLAUDE_CONFIG_DIR="$HOME/.claude-z" claude "$@"')
     expect(block).not.toContain('cl-default')
@@ -30,7 +30,7 @@ describe('renderRcBlock', () => {
   it('renders powershell launchers on win32', () => {
     const block = renderRcBlock(m, win)
     expect(block).toContain('function cl-z {')
-    expect(block).toContain('$env:ANTHROPIC_AUTH_TOKEN = (ccp secrets get z-token)')
+    expect(block).toContain('$env:ANTHROPIC_AUTH_TOKEN = (ccprofiles secrets get z-token)')
     expect(block).toContain('$env:CLAUDE_CONFIG_DIR = "$env:USERPROFILE\\.claude-z"')
     expect(block).toContain('claude @args')
   })

@@ -64,8 +64,8 @@ export function registerSecretsCommands(program: Command, ctx: CliContext): void
       const secretName = varName.toLowerCase().replaceAll('_', '-')
       if (!opts.dryRun) await store.set(secretName, secretValue)
       out.push(pwsh
-        ? `${prefix}(ccp secrets get ${secretName})${suffix}`
-        : `${prefix}"$(ccp secrets get ${secretName})"${suffix}`)
+        ? `${prefix}(ccprofiles secrets get ${secretName})${suffix}`
+        : `${prefix}"$(ccprofiles secrets get ${secretName})"${suffix}`)
       migrated.push(secretName)
     }
     if (migrated.length === 0) { console.log('no plaintext keys found'); return }

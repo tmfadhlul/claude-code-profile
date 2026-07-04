@@ -10,7 +10,7 @@ async function post(host: string, port: number, path: string, payload: unknown):
       body: JSON.stringify(payload),
     })
   } catch {
-    throw new Error(`cannot reach ${host}:${port} — is \`ccp serve\` running on the other device?`)
+    throw new Error(`cannot reach ${host}:${port} — is \`ccprofiles serve\` running on the other device?`)
   }
   const data: any = await res.json()
   if (!res.ok) throw new Error(`${path}: ${data.error ?? res.status}`)
