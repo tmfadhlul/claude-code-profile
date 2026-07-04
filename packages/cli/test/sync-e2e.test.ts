@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startSyncServer, parseManifest, serializeManifest } from '@ccprofiles/core'
+import { startSyncServer, parseManifest, serializeManifest } from 'ccprofiles-core'
 import { buildProgram, makeContext } from '../src/context.js'
 
 let macHome: string   // "mac" — the master device, runs the server

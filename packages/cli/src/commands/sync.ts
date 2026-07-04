@@ -3,7 +3,7 @@ import {
   startSyncServer, pairWithServer, fetchRemote, fetchSecrets,
   loadDevices, saveDevices, parseManifest, serializeManifest, saveManifest,
   writeAssets, discoverProfiles, planApply, executeApply, backupFiles,
-} from '@ccprofiles/core'
+} from 'ccprofiles-core'
 import { join } from 'node:path'
 import type { CliContext } from '../context.js'
 import { secretsStore } from './secrets.js'
