@@ -9,12 +9,15 @@ const exec = promisify(execFile)
 export class ManifestError extends Error {}
 
 const McpServerSchema = z.object({
-  command: z.string(),
+  command: z.string().optional(),
   args: z.array(z.string()).optional(),
   env: z.record(z.string()).optional(),
   type: z.string().optional(),
   url: z.string().optional(),
-}).passthrough()
+}).passthrough().refine(
+  s => s.command !== undefined || s.url !== undefined,
+  { message: 'mcp server must have either "command" (local) or "url" (remote)' },
+)
 
 const ProfileSchema = z.object({
   name: z.string().min(1),
@@ -92,8 +95,10 @@ export async function loadManifest(root: string): Promise<Manifest> {
 }
 
 export async function saveManifest(root: string, m: Manifest): Promise<void> {
+  const yaml = serializeManifest(m)
+  parseManifest(yaml) // guard: never write a manifest that cannot be reloaded
   await mkdir(root, { recursive: true })
-  await writeFile(join(root, 'manifest.yaml'), serializeManifest(m), 'utf8')
+  await writeFile(join(root, 'manifest.yaml'), yaml, 'utf8')
   try {
     await exec('git', ['-C', root, 'rev-parse', '--git-dir'])
     await exec('git', ['-C', root, 'add', '-A'])
