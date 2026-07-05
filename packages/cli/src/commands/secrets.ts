@@ -1,7 +1,8 @@
 import type { Command } from 'commander'
-import { SecretsStore, FileBackend, defaultBackend, backupFiles, atomicWrite } from 'ccprofiles-core'
+import { SecretsStore, FileBackend, defaultBackend, backupFiles, atomicWrite, loadManifest, saveManifest } from 'ccprofiles-core'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { CliContext } from '../context.js'
 
 export async function secretsStore(ctx: CliContext): Promise<SecretsStore> {
@@ -15,7 +16,7 @@ export async function secretsStore(ctx: CliContext): Promise<SecretsStore> {
   return new SecretsStore(backend, ctx.secretsIndexPath)
 }
 
-const KEY_VARS = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN']
+export const KEY_VARS = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN']
 // posix: export VAR="sk-..."   powershell: $env:VAR = "sk-..."
 const MIGRATE_RE_POSIX = new RegExp(`^(\\s*(?:export\\s+)?(${KEY_VARS.join('|')})\\s*=\\s*)"?(sk-[A-Za-z0-9_-]+)"?(.*)$`)
 const MIGRATE_RE_PWSH = new RegExp(`^(\\s*\\$env:(${KEY_VARS.join('|')})\\s*=\\s*)"?(sk-[A-Za-z0-9_-]+)"?(.*)$`)
@@ -48,6 +49,26 @@ export async function migrateRcSecrets(ctx: CliContext, opts: { dryRun?: boolean
   return migrated
 }
 
+/** Move plaintext token values in manifest settingsEnv into the secrets store as secret:// refs. */
+export async function migrateSettingsSecrets(ctx: CliContext, opts: { dryRun?: boolean } = {}): Promise<string[]> {
+  if (!existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) return []
+  const m = await loadManifest(ctx.manifestRoot)
+  const store = await secretsStore(ctx)
+  const migrated: string[] = []
+  for (const pr of m.profiles) {
+    for (const varName of KEY_VARS) {
+      const v = pr.settingsEnv[varName]
+      if (!v || v.startsWith('secret://')) continue
+      const secretName = `${varName.toLowerCase().replaceAll('_', '-')}-${pr.name}`
+      if (!opts.dryRun) await store.set(secretName, v)
+      pr.settingsEnv[varName] = `secret://${secretName}`
+      migrated.push(secretName)
+    }
+  }
+  if (migrated.length && !opts.dryRun) await saveManifest(ctx.manifestRoot, m)
+  return migrated
+}
+
 export function registerSecretsCommands(program: Command, ctx: CliContext): void {
   const sec = program.command('secrets').description('manage secrets (values never stored in configs)')
 
@@ -77,7 +98,7 @@ export function registerSecretsCommands(program: Command, ctx: CliContext): void
   })
 
   sec.command('migrate').option('--dry-run').action(async (opts: { dryRun?: boolean }) => {
-    const migrated = await migrateRcSecrets(ctx, opts)
+    const migrated = [...await migrateRcSecrets(ctx, opts), ...await migrateSettingsSecrets(ctx, opts)]
     if (migrated.length === 0) { console.log('no plaintext keys found'); return }
     for (const n of migrated) console.log(`${opts.dryRun ? '[dry-run] ' : ''}migrated ${n}`)
   })

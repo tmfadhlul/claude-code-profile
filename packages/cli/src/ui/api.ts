@@ -8,7 +8,7 @@ import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from '
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { requireManifest, type CliContext } from '../context.js'
-import { secretsStore, migrateRcSecrets } from '../commands/secrets.js'
+import { secretsStore, migrateRcSecrets, migrateSettingsSecrets, KEY_VARS } from '../commands/secrets.js'
 import { sendJson, readJson, HttpError, type Route } from './http.js'
 import { planActions, planActionsPreflight } from '../plan.js'
 
@@ -151,22 +151,26 @@ export function buildRoutes(ctx: CliContext): Route[] {
   add('GET', /^\/api\/doctor$/, async (_m, _req, res) => {
     const problems: string[] = []
     const live = await discoverProfiles(ctx.home)
-    for (const lp of live)
+    let man: Manifest | null = null
+    if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) man = await loadManifest(ctx.manifestRoot)
+    for (const lp of live) {
       for (const nm of readdirSync(lp.dir)) {
         const f = join(lp.dir, nm)
         try { if (lstatSync(f).isSymbolicLink() && !existsSync(f)) problems.push(`broken symlink: ${f} -> ${readlinkSync(f)}`) } catch { /* skip */ }
       }
+      const decl = man?.profiles.find(p => p.name === profileName(lp.dirName)) ?? null
+      for (const varName of KEY_VARS)
+        if (lp.settingsEnv[varName] && !decl?.settingsEnv[varName])
+          problems.push(`plaintext token ${varName} in ${join(lp.dir, 'settings.json')} — adopt profile then run: secrets migrate`)
+    }
     if (existsSync(ctx.platform.rcFile)) {
       const rc = readFileSync(ctx.platform.rcFile, 'utf8')
       const outside = rc.split('# >>> ccprofiles managed >>>')[0] + (rc.split('# <<< ccprofiles managed <<<')[1] ?? '')
       if (/sk-ant-/.test(outside)) problems.push(`plaintext Anthropic key in ${ctx.platform.rcFile} — run secrets migrate`)
     }
-    if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
-      const m = await loadManifest(ctx.manifestRoot)
-      for (const pr of m.profiles) {
-        const dir = pr.dir.replace('{home}', ctx.home)
-        if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run apply`)
-      }
+    if (man) for (const pr of man.profiles) {
+      const dir = pr.dir.replace('{home}', ctx.home)
+      if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run apply`)
     }
     sendJson(res, 200, { problems })
   })
@@ -282,7 +286,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     sendJson(res, 200, { ok: true })
   })
   add('POST', /^\/api\/secrets\/migrate$/, async (_m, _req, res) => {
-    sendJson(res, 200, { migrated: await migrateRcSecrets(ctx) })
+    sendJson(res, 200, { migrated: [...await migrateRcSecrets(ctx), ...await migrateSettingsSecrets(ctx)] })
   })
 
   // ── devices / sync ──────────────────────────────────────────────────────────
