@@ -91,7 +91,7 @@ export function ProfilesPage() {
       </Table>
 
       {editing && (
-        <ProfileEditor profile={editing} servers={servers} secretNames={secretNames}
+        <ProfileEditor profile={editing} profiles={rows} servers={servers} secretNames={secretNames}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />
       )}
 

@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/sonner'
 import { api } from '@/lib/api'
+import { splitProviderEnv, mergeProviderEnv } from '@/lib/provider'
+import { ProviderForm } from '@/components/ProviderForm'
 import { X } from 'lucide-react'
 
 export type ProfileRow = {
@@ -58,15 +60,15 @@ function EnvRowsEditor({ rows, onChange, secretNames, keyPlaceholder }: {
   )
 }
 
-export function ProfileEditor({ profile, servers, secretNames, onClose, onSaved }: {
-  profile: ProfileRow; servers: string[]; secretNames: string[]
+export function ProfileEditor({ profile, profiles, servers, secretNames, onClose, onSaved }: {
+  profile: ProfileRow; profiles: ProfileRow[]; servers: string[]; secretNames: string[]
   onClose: () => void; onSaved: () => void
 }) {
   const [launcher, setLauncher] = useState(profile.launcher ?? '')
   const [env, setEnv] = useState<EnvRow[]>(toEnvRows(profile.env))
-  const [senv, setSenv] = useState<EnvRow[]>(toEnvRows(
-    Object.keys(profile.settingsEnv).length ? profile.settingsEnv : profile.liveSettingsEnv,
-  ))
+  const seeded = Object.keys(profile.settingsEnv).length ? profile.settingsEnv : profile.liveSettingsEnv
+  const [pform, setPform] = useState(() => splitProviderEnv(seeded).form)
+  const [padv, setPadv] = useState<EnvRow[]>(() => toEnvRows(splitProviderEnv(seeded).advanced))
   const [links, setLinks] = useState<KvRow[]>(Object.entries(profile.links).map(([key, value]) => ({ key, value })))
   const [mcp, setMcp] = useState<string[]>(profile.mcpNames)
   const [saving, setSaving] = useState(false)
@@ -74,13 +76,13 @@ export function ProfileEditor({ profile, servers, secretNames, onClose, onSaved 
   const setLinkAt = (i: number, patch: Partial<KvRow>) => setLinks(links.map((r, j) => j === i ? { ...r, ...patch } : r))
 
   const save = async () => {
-    for (const r of [...env, ...senv]) if (r.secret && !r.value) { toast.error(`pick a secret for ${r.key || 'env var'}`); return }
+    for (const r of [...env, ...padv]) if (r.secret && !r.value) { toast.error(`pick a secret for ${r.key || 'env var'}`); return }
     setSaving(true)
     try {
       const linksObj: Record<string, string> = {}
       for (const r of links) if (r.key.trim()) linksObj[r.key.trim()] = r.value
       await api.patchProfile(profile.name, {
-        env: fromEnvRows(env), settingsEnv: fromEnvRows(senv), links: linksObj, launcher: launcher.trim() || null,
+        env: fromEnvRows(env), settingsEnv: mergeProviderEnv(pform, fromEnvRows(padv)), links: linksObj, launcher: launcher.trim() || null,
       })
       for (const s of mcp.filter(s => !profile.mcpNames.includes(s))) await api.addMcp({ name: s, targets: [profile.name] })
       for (const s of profile.mcpNames.filter(s => !mcp.includes(s))) await api.rmMcp(s, [profile.name])
@@ -105,9 +107,18 @@ export function ProfileEditor({ profile, servers, secretNames, onClose, onSaved 
           </div>
 
           <div className="space-y-1.5">
-            <Label>Provider settings (settings.json env)</Label>
-            <p className="text-xs text-muted-foreground">Base URL, auth token, model mappings — written into this profile's settings.json. Secret values resolve from the keychain on apply.</p>
-            <EnvRowsEditor rows={senv} onChange={setSenv} secretNames={secretNames} keyPlaceholder="ANTHROPIC_BASE_URL" />
+            <Label>Provider</Label>
+            <p className="text-xs text-muted-foreground">Where this profile's Claude Code sends requests — written into settings.json. Secret tokens resolve from the keychain on apply.</p>
+            <ProviderForm form={pform} onChange={setPform} secretNames={secretNames}
+              copySources={profiles.filter(p => p.name !== profile.name)
+                .map(p => ({ name: p.name, env: Object.keys(p.settingsEnv).length ? p.settingsEnv : p.liveSettingsEnv }))
+                .filter(s => s.env.ANTHROPIC_BASE_URL)} />
+            <details className="pt-1">
+              <summary className="text-xs text-muted-foreground cursor-pointer select-none">Advanced — other settings.json env vars ({padv.length})</summary>
+              <div className="space-y-1.5 pt-2">
+                <EnvRowsEditor rows={padv} onChange={setPadv} secretNames={secretNames} keyPlaceholder="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" />
+              </div>
+            </details>
           </div>
 
           <div className="space-y-1.5">
