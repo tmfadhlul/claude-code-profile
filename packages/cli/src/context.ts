@@ -26,8 +26,9 @@ export function makeContext(env: NodeJS.ProcessEnv = process.env): CliContext {
   // selection from a single dev machine — never set this outside tests. It intentionally
   // accepts any sentinel string (not just OsKind): detectPlatform/defaultBackend only ever
   // compare it against 'darwin'/'linux'/'win32' at runtime, so a value like 'none' safely
-  // flows through as a deterministic "none of the above" platform for tests.
-  const forcedOs = env.CCPROFILES_FORCE_OS
+  // flows through as a deterministic "none of the above" platform for tests. Gated behind
+  // CCPROFILES_TEST_HOME (the existing test-only signal) so it can never affect production.
+  const forcedOs = testHome ? env.CCPROFILES_FORCE_OS : undefined
   const platform = detectPlatform({
     ...(testHome ? { home: testHome, shell: env.SHELL } : {}),
     ...(forcedOs ? { osKind: forcedOs as OsKind } : {}),

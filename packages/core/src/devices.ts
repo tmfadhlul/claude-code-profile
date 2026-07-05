@@ -12,7 +12,7 @@ export interface DeviceEntry {
   key: string
 }
 
-const IGNORE = ['secrets.enc', 'secret-names.json', 'devices.json', 'backups/', '*.ccp-tmp']
+const IGNORE = ['secrets.enc', 'secrets.dpapi.json', 'secret-names.json', 'devices.json', 'backups/', '*.ccp-tmp']
 
 export async function loadDevices(root: string): Promise<DeviceEntry[]> {
   const f = join(root, 'devices.json')
