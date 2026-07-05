@@ -6,7 +6,7 @@ import {
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { requireManifest, type CliContext } from '../context.js'
-import { planActions } from '../plan.js'
+import { planActions, planActionsPreflight } from '../plan.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
@@ -34,6 +34,7 @@ export function registerBundleCommands(program: Command, ctx: CliContext): void 
         process.exitCode = 1
         return
       }
+      await planActionsPreflight(ctx, m) // abort before touching local state if the bundle has an unresolvable secret ref
       if (!opts.dryRun) {
         await backupFiles([join(ctx.manifestRoot, 'manifest.yaml')], ctx.backupRoot, stamp())
         await saveManifest(ctx.manifestRoot, m)

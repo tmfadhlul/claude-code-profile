@@ -1,10 +1,10 @@
 import type { Command } from 'commander'
-import { discoverProfiles, buildManifest, saveManifest, loadManifest, ensureRootGitignore } from 'ccprofiles-core'
+import { discoverProfiles, buildManifest, saveManifest, loadManifest, preserveSecretRefs, ensureRootGitignore } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import type { CliContext } from '../context.js'
-import { KEY_VARS } from './secrets.js'
+import { KEY_VARS, secretsStore } from './secrets.js'
 
 export function registerProfileCommands(program: Command, ctx: CliContext): void {
   program.command('list').description('list Claude Code profiles').action(async () => {
@@ -25,6 +25,11 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
       const manifest = buildManifest(live, ctx.platform)
       console.log(`Discovered ${manifest.profiles.length} profiles, ${Object.keys(manifest.mcpServers).length} mcp servers.`)
       if (!opts.yes) { console.log('Re-run with --yes to write the manifest.'); return }
+      if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
+        const oldM = await loadManifest(ctx.manifestRoot)
+        let store: Awaited<ReturnType<typeof secretsStore>> | null = null
+        await preserveSecretRefs(manifest, oldM, async name => { store ??= await secretsStore(ctx); return store.get(name) })
+      }
       if (!existsSync(join(ctx.manifestRoot, '.git'))) {
         try { execFileSync('git', ['init', ctx.manifestRoot], { stdio: 'ignore' }) } catch { /* git optional */ }
       }
@@ -47,9 +52,12 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
       }
       const pname = lp.dirName === '.claude' ? 'default' : lp.dirName.slice('.claude-'.length)
       const decl = m?.profiles.find(p => p.name === pname) ?? null
-      for (const varName of KEY_VARS)
+      for (const varName of KEY_VARS) {
         if (lp.settingsEnv[varName] && !decl?.settingsEnv[varName])
           problems.push(`plaintext token ${varName} in ${join(lp.dir, 'settings.json')} — adopt profile then run: secrets migrate`)
+        if (decl?.settingsEnv[varName] && !decl.settingsEnv[varName].startsWith('secret://'))
+          problems.push(`plaintext token ${varName} in manifest for profile "${pname}" — run: secrets migrate`)
+      }
     }
     if (existsSync(ctx.platform.rcFile)) {
       const rc = readFileSync(ctx.platform.rcFile, 'utf8')

@@ -2,7 +2,7 @@ import {
   discoverProfiles, buildManifest, saveManifest, executeApply,
   ensureRootGitignore, loadManifest, loadDevices, fetchRemote, fetchSecrets,
   writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
-  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, type Manifest,
+  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, type Manifest,
 } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -22,8 +22,18 @@ export function buildRoutes(ctx: CliContext): Route[] {
   const routes: Route[] = []
   const add = (method: string, pattern: RegExp, handler: Route['handler']) => routes.push({ method, pattern, handler })
 
+  // A missing secret ref is a recoverable/user-facing state (not a server error) — surface as 409.
+  async function planActionsOr409(m: Manifest) {
+    try { return await planActions(ctx, m) }
+    catch (e) {
+      const msg = (e as Error).message
+      if (/secret not found/.test(msg)) throw new HttpError(409, msg)
+      throw e
+    }
+  }
+
   async function applyAndReport(m: Manifest) {
-    const actions = await planActions(ctx, m)
+    const actions = await planActionsOr409(m)
     return executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp() })
   }
 
@@ -48,6 +58,11 @@ export function buildRoutes(ctx: CliContext): Route[] {
   // ── adopt / profiles / status / apply / doctor ──────────────────────────────
   add('POST', /^\/api\/adopt$/, async (_m, _req, res) => {
     const manifest = buildManifest(await discoverProfiles(ctx.home), ctx.platform)
+    if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
+      const oldM = await loadManifest(ctx.manifestRoot)
+      let store: Awaited<ReturnType<typeof secretsStore>> | null = null
+      await preserveSecretRefs(manifest, oldM, async name => { store ??= await secretsStore(ctx); return store.get(name) })
+    }
     if (!existsSync(join(ctx.manifestRoot, '.git'))) {
       try { execFileSync('git', ['init', ctx.manifestRoot], { stdio: 'ignore' }) } catch { /* git optional */ }
     }
@@ -69,7 +84,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
         launcher: decl?.launcher ?? (name === 'default' ? null : `cl-${name}`),
         adopted: !!decl,
         env: decl?.env ?? {}, links: decl?.links ?? {}, mcpNames: decl?.mcp ?? [],
-        settingsEnv: decl?.settingsEnv ?? {},
+        settingsEnv: decl?.settingsEnv ?? {}, liveSettingsEnv: lp.settingsEnv,
       }
     })
     sendJson(res, 200, rows)
@@ -137,7 +152,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
 
   add('GET', /^\/api\/status$/, async (_m, _req, res) => {
     const m = await mustManifest()
-    const actions = await planActions(ctx, m)
+    const actions = await planActionsOr409(m)
     const r = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: true })
     sendJson(res, 200, { inSync: actions.length === 0, pending: r.performed })
   })
@@ -159,9 +174,12 @@ export function buildRoutes(ctx: CliContext): Route[] {
         try { if (lstatSync(f).isSymbolicLink() && !existsSync(f)) problems.push(`broken symlink: ${f} -> ${readlinkSync(f)}`) } catch { /* skip */ }
       }
       const decl = man?.profiles.find(p => p.name === profileName(lp.dirName)) ?? null
-      for (const varName of KEY_VARS)
+      for (const varName of KEY_VARS) {
         if (lp.settingsEnv[varName] && !decl?.settingsEnv[varName])
           problems.push(`plaintext token ${varName} in ${join(lp.dir, 'settings.json')} — adopt profile then run: secrets migrate`)
+        if (decl?.settingsEnv[varName] && !decl.settingsEnv[varName].startsWith('secret://'))
+          problems.push(`plaintext token ${varName} in manifest for profile "${profileName(lp.dirName)}" — run: secrets migrate`)
+      }
     }
     if (existsSync(ctx.platform.rcFile)) {
       const rc = readFileSync(ctx.platform.rcFile, 'utf8')
@@ -281,12 +299,27 @@ export function buildRoutes(ctx: CliContext): Route[] {
     sendJson(res, 200, { ok: true })
   })
   add('DELETE', /^\/api\/secrets\/([^/]+)$/, async (mtch, _req, res) => {
+    const name = decodeURIComponent(mtch[1])
+    const ref = `secret://${name}`
+    if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
+      const m = await loadManifest(ctx.manifestRoot)
+      for (const pr of m.profiles) {
+        for (const [k, v] of Object.entries(pr.env)) if (v === ref) throw new HttpError(409, `secret "${name}" is referenced by profile "${pr.name}" (${k}) — detach it first`)
+        for (const [k, v] of Object.entries(pr.settingsEnv)) if (v === ref) throw new HttpError(409, `secret "${name}" is referenced by profile "${pr.name}" (${k}) — detach it first`)
+      }
+    }
     const store = await secretsStore(ctx)
-    await store.delete(decodeURIComponent(mtch[1]))
+    await store.delete(name)
     sendJson(res, 200, { ok: true })
   })
   add('POST', /^\/api\/secrets\/migrate$/, async (_m, _req, res) => {
-    sendJson(res, 200, { migrated: [...await migrateRcSecrets(ctx), ...await migrateSettingsSecrets(ctx)] })
+    const migrated = [...await migrateRcSecrets(ctx), ...await migrateSettingsSecrets(ctx)]
+    // Apply so the manifest's newly-minted secret:// refs are (re-)resolved and written back out.
+    if (migrated.length && existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
+      const m = await loadManifest(ctx.manifestRoot)
+      await applyAndReport(m)
+    }
+    sendJson(res, 200, { migrated })
   })
 
   // ── devices / sync ──────────────────────────────────────────────────────────
@@ -300,6 +333,21 @@ export function buildRoutes(ctx: CliContext): Route[] {
     if (!device) throw new HttpError(400, `unknown device: ${from}`)
     const { manifestYaml, assets } = await fetchRemote(device)
     const m = parseManifest(manifestYaml)
+
+    // Fetch+store secrets BEFORE touching local state, so a preflight below that needs
+    // a just-transferred secret succeeds instead of failing after the manifest is overwritten.
+    let secrets: string[] = []
+    if (withSecrets) {
+      const values = await fetchSecrets(device, [])
+      if (!dryRun) { const store = await secretsStore(ctx); for (const [k, v] of Object.entries(values)) await store.set(k, v) }
+      secrets = Object.keys(values)
+    }
+
+    // Validate the pulled manifest resolves cleanly before saving/applying anything — a peer
+    // manifest with a settingsEnv secret ref we don't have must not overwrite local state.
+    try { await planActionsPreflight(ctx, m) }
+    catch (e) { throw new HttpError(409, (e as Error).message) }
+
     if (!dryRun) {
       await backupFiles([join(ctx.manifestRoot, 'manifest.yaml')], ctx.backupRoot, stamp())
       await saveManifest(ctx.manifestRoot, m)
@@ -307,12 +355,6 @@ export function buildRoutes(ctx: CliContext): Route[] {
     }
     const actions = await planActions(ctx, m)
     const r = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!dryRun })
-    let secrets: string[] = []
-    if (withSecrets) {
-      const values = await fetchSecrets(device, [])
-      if (!dryRun) { const store = await secretsStore(ctx); for (const [k, v] of Object.entries(values)) await store.set(k, v) }
-      secrets = Object.keys(values)
-    }
     sendJson(res, 200, { performed: r.performed, secrets })
   })
 

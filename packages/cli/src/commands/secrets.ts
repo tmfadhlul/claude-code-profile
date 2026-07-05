@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { SecretsStore, FileBackend, defaultBackend, backupFiles, atomicWrite, loadManifest, saveManifest } from 'ccprofiles-core'
+import { SecretsStore, FileBackend, defaultBackend, backupFiles, atomicWrite, loadManifest, saveManifest, executeApply } from 'ccprofiles-core'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -101,5 +101,14 @@ export function registerSecretsCommands(program: Command, ctx: CliContext): void
     const migrated = [...await migrateRcSecrets(ctx, opts), ...await migrateSettingsSecrets(ctx, opts)]
     if (migrated.length === 0) { console.log('no plaintext keys found'); return }
     for (const n of migrated) console.log(`${opts.dryRun ? '[dry-run] ' : ''}migrated ${n}`)
+    // Apply so the manifest's newly-minted secret:// refs are (re-)resolved and written back
+    // out — dynamic import avoids a static circular import (plan.ts imports this module for secretsStore).
+    if (!opts.dryRun && existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
+      const { planActions } = await import('../plan.js')
+      const m = await loadManifest(ctx.manifestRoot)
+      const actions = await planActions(ctx, m)
+      const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: new Date().toISOString().replace(/[:.]/g, '-') })
+      for (const line of res.performed) console.log(`applied: ${line}`)
+    }
   })
 }
