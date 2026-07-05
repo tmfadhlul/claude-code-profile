@@ -11,7 +11,7 @@ export type ProfileRow = {
   name: string; dir: string; auth: string; account: string | null; mcp: number
   launcher: string | null; adopted: boolean
   env: Record<string, string>; links: Record<string, string>; mcpNames: string[]
-  settingsEnv: Record<string, string>
+  settingsEnv: Record<string, string>; liveSettingsEnv: Record<string, string>
 }
 
 const SECRET_PREFIX = 'secret://'
@@ -64,7 +64,9 @@ export function ProfileEditor({ profile, servers, secretNames, onClose, onSaved 
 }) {
   const [launcher, setLauncher] = useState(profile.launcher ?? '')
   const [env, setEnv] = useState<EnvRow[]>(toEnvRows(profile.env))
-  const [senv, setSenv] = useState<EnvRow[]>(toEnvRows(profile.settingsEnv))
+  const [senv, setSenv] = useState<EnvRow[]>(toEnvRows(
+    Object.keys(profile.settingsEnv).length ? profile.settingsEnv : profile.liveSettingsEnv,
+  ))
   const [links, setLinks] = useState<KvRow[]>(Object.entries(profile.links).map(([key, value]) => ({ key, value })))
   const [mcp, setMcp] = useState<string[]>(profile.mcpNames)
   const [saving, setSaving] = useState(false)

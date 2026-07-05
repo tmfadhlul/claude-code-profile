@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildManifest } from '../src/adopt.js'
+import { buildManifest, preserveSecretRefs } from '../src/adopt.js'
 import { detectPlatform } from '../src/platform.js'
 import { discoverProfiles, type LiveProfile } from '../src/discovery.js'
+import type { Manifest } from '../src/manifest.js'
 
 const p = detectPlatform({ osKind: 'darwin', home: '/Users/x', shell: '/bin/zsh' })
 const live: LiveProfile[] = [
@@ -39,5 +40,43 @@ describe('buildManifest', () => {
     await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' } }))
     const m = buildManifest(await discoverProfiles(home), detectPlatform({ home, shell: '/bin/zsh' }))
     expect(m.profiles[0].settingsEnv.ANTHROPIC_BASE_URL).toBe('https://api.z.ai/api/anthropic')
+  })
+})
+
+describe('preserveSecretRefs', () => {
+  function manifestWith(settingsEnv: Record<string, string>): Manifest {
+    return {
+      version: 1, hub: null, mcpServers: {},
+      profiles: [{ name: 'default', dir: '{home}/.claude', launcher: null, auth: 'env', env: {}, links: {}, mcp: [], settingsEnv }],
+    }
+  }
+
+  it('restores a secret:// ref when the freshly-discovered plaintext value matches the resolved secret', async () => {
+    const oldM = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'secret://anthropic-auth-token-default' })
+    const newM = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'plain-tok-1' })
+    await preserveSecretRefs(newM, oldM, async name => (name === 'anthropic-auth-token-default' ? 'plain-tok-1' : null))
+    expect(newM.profiles[0].settingsEnv.ANTHROPIC_AUTH_TOKEN).toBe('secret://anthropic-auth-token-default')
+  })
+
+  it('leaves the new plaintext value alone when it no longer matches the resolved secret', async () => {
+    const oldM = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'secret://anthropic-auth-token-default' })
+    const newM = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'someone-changed-it' })
+    await preserveSecretRefs(newM, oldM, async name => (name === 'anthropic-auth-token-default' ? 'plain-tok-1' : null))
+    expect(newM.profiles[0].settingsEnv.ANTHROPIC_AUTH_TOKEN).toBe('someone-changed-it')
+  })
+
+  it('leaves the new plaintext value alone when the referenced secret no longer exists', async () => {
+    const oldM = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'secret://gone' })
+    const newM = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'plain-tok-1' })
+    await preserveSecretRefs(newM, oldM, async () => null)
+    expect(newM.profiles[0].settingsEnv.ANTHROPIC_AUTH_TOKEN).toBe('plain-tok-1')
+  })
+
+  it('ignores profiles that did not exist in the old manifest', async () => {
+    const oldM = manifestWith({})
+    oldM.profiles = []
+    const newM = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'plain-tok-1' })
+    await preserveSecretRefs(newM, oldM, async () => 'plain-tok-1')
+    expect(newM.profiles[0].settingsEnv.ANTHROPIC_AUTH_TOKEN).toBe('plain-tok-1')
   })
 })

@@ -7,7 +7,7 @@ import {
 import { join } from 'node:path'
 import type { CliContext } from '../context.js'
 import { secretsStore } from './secrets.js'
-import { planActions } from '../plan.js'
+import { planActions, planActionsPreflight } from '../plan.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
@@ -69,6 +69,22 @@ export function registerSyncCommands(program: Command, ctx: CliContext): void {
       const { manifestYaml, assets } = await fetchRemote(device)
       const m = parseManifest(manifestYaml) // validate before touching anything
       console.log(`pulled manifest: ${m.profiles.length} profiles, ${Object.keys(m.mcpServers).length} mcp servers, ${Object.keys(assets).length} asset files`)
+
+      // Fetch+store secrets BEFORE touching local state, so a preflight below that needs a
+      // just-transferred secret succeeds instead of failing after the manifest is overwritten.
+      let values: Record<string, string> = {}
+      if (opts.withSecrets) {
+        values = await fetchSecrets(device, [])
+        if (!opts.dryRun) {
+          const store = await secretsStore(ctx)
+          for (const [k, v] of Object.entries(values)) await store.set(k, v)
+        }
+      }
+
+      // Validate the pulled manifest resolves cleanly before saving/applying anything — abort
+      // (propagating the Error) rather than leave the local manifest overwritten and broken.
+      await planActionsPreflight(ctx, m)
+
       if (!opts.dryRun) {
         await backupFiles([join(ctx.manifestRoot, 'manifest.yaml')], ctx.backupRoot, stamp())
         await saveManifest(ctx.manifestRoot, m)
@@ -78,11 +94,6 @@ export function registerSyncCommands(program: Command, ctx: CliContext): void {
       const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!opts.dryRun })
       for (const line of res.performed) console.log(`${opts.dryRun ? '[dry-run] ' : ''}${line}`)
       if (opts.withSecrets) {
-        const values = await fetchSecrets(device, [])
-        if (!opts.dryRun) {
-          const store = await secretsStore(ctx)
-          for (const [k, v] of Object.entries(values)) await store.set(k, v)
-        }
         console.log(`${opts.dryRun ? '[dry-run] ' : ''}secrets transferred: ${Object.keys(values).join(', ') || 'none'}`)
       }
     })

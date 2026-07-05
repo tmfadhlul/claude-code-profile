@@ -9,7 +9,7 @@ import { api } from '@/lib/api'
 import type { ProfileRow } from '@/components/ProfileEditor'
 
 const SECRET_PREFIX = 'secret://'
-type Usage = { profile: string; envKey: string }
+type Usage = { profile: string; envKey: string; map: 'env' | 'settingsEnv' }
 
 export function SecretsPage() {
   const [names, setNames] = useState<string[]>([]); const [backend, setBackend] = useState('')
@@ -26,9 +26,14 @@ export function SecretsPage() {
   useEffect(() => { load() }, [])
 
   const usage = (secret: string): Usage[] =>
-    profiles.flatMap(p => Object.entries(p.env)
-      .filter(([, v]) => v === SECRET_PREFIX + secret)
-      .map(([envKey]) => ({ profile: p.name, envKey })))
+    profiles.flatMap(p => [
+      ...Object.entries(p.env)
+        .filter(([, v]) => v === SECRET_PREFIX + secret)
+        .map(([envKey]) => ({ profile: p.name, envKey, map: 'env' as const })),
+      ...Object.entries(p.settingsEnv)
+        .filter(([, v]) => v === SECRET_PREFIX + secret)
+        .map(([envKey]) => ({ profile: p.name, envKey, map: 'settingsEnv' as const })),
+    ])
 
   const reveal = async (n: string) => {
     if (shown[n] !== undefined) { const c = { ...shown }; delete c[n]; setShown(c); return }
@@ -49,8 +54,10 @@ export function SecretsPage() {
   const detach = async (secret: string, u: Usage) => {
     const p = profiles.find(x => x.name === u.profile)
     if (!p) return
-    const env = { ...p.env }; delete env[u.envKey]
-    try { await api.patchProfile(p.name, { env }); toast.success(`Detached ${secret} from ${u.profile}`); load() }
+    const patch = u.map === 'env'
+      ? { env: (() => { const env = { ...p.env }; delete env[u.envKey]; return env })() }
+      : { settingsEnv: (() => { const settingsEnv = { ...p.settingsEnv }; delete settingsEnv[u.envKey]; return settingsEnv })() }
+    try { await api.patchProfile(p.name, patch); toast.success(`Detached ${secret} from ${u.profile}`); load() }
     catch (e: any) { toast.error(e.message) }
   }
 
@@ -63,7 +70,7 @@ export function SecretsPage() {
         <div className="flex gap-2">
           <Button variant="secondary" onClick={async () => {
             try { const r = await api.migrate(); toast.success(r.migrated.length ? `Migrated ${r.migrated.join(', ')}` : 'No plaintext keys found'); load() } catch (e: any) { toast.error(e.message) }
-          }}>Migrate from rc</Button>
+          }}>Migrate plaintext keys</Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button>Add secret</Button></DialogTrigger>
             <DialogContent>
@@ -89,8 +96,8 @@ export function SecretsPage() {
                 {used.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {used.map(u => (
-                      <Badge key={`${u.profile}-${u.envKey}`} variant="secondary" className="font-mono text-[11px] gap-1">
-                        {u.profile} · {u.envKey}
+                      <Badge key={`${u.profile}-${u.map}-${u.envKey}`} variant="secondary" className="font-mono text-[11px] gap-1">
+                        {u.profile} · {u.envKey}{u.map === 'settingsEnv' && <span className="text-muted-foreground"> (settings)</span>}
                         <button className="ml-0.5 hover:text-foreground" title="Detach" onClick={() => detach(n, u)}>×</button>
                       </Badge>
                     ))}

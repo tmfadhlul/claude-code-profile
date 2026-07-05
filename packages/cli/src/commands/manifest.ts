@@ -1,9 +1,12 @@
 import type { Command } from 'commander'
 import {
-  discoverProfiles, buildManifest, saveManifest, executeApply,
+  discoverProfiles, buildManifest, saveManifest, loadManifest, preserveSecretRefs, executeApply,
 } from 'ccprofiles-core'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { requireManifest, type CliContext } from '../context.js'
 import { planActions } from '../plan.js'
+import { secretsStore } from './secrets.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
@@ -29,6 +32,11 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
 
   program.command('snapshot').description('overwrite manifest from live state').action(async () => {
     const m = buildManifest(await discoverProfiles(ctx.home), ctx.platform)
+    if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
+      const oldM = await loadManifest(ctx.manifestRoot)
+      let store: Awaited<ReturnType<typeof secretsStore>> | null = null
+      await preserveSecretRefs(m, oldM, async name => { store ??= await secretsStore(ctx); return store.get(name) })
+    }
     await saveManifest(ctx.manifestRoot, m)
     console.log(`snapshot: ${m.profiles.length} profiles, ${Object.keys(m.mcpServers).length} mcp servers`)
   })

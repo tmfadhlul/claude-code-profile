@@ -43,3 +43,26 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
 
   return { version: 1, hub, profiles, mcpServers }
 }
+
+/**
+ * Re-migrate secret refs after a snapshot/adopt rebuilds the manifest from live state.
+ * Live settings.json holds resolved plaintext values, so a freshly built manifest would
+ * re-leak a previously migrated token as plaintext. For each profile that existed before,
+ * if the old manifest had a secret:// ref whose resolved value matches the newly-discovered
+ * plaintext value, restore the ref instead of the plaintext.
+ */
+export async function preserveSecretRefs(
+  newM: Manifest,
+  oldM: Manifest,
+  getSecret: (name: string) => Promise<string | null>,
+): Promise<void> {
+  for (const pr of newM.profiles) {
+    const old = oldM.profiles.find(p => p.name === pr.name)
+    if (!old) continue
+    for (const [k, v] of Object.entries(old.settingsEnv ?? {})) {
+      if (!v.startsWith('secret://')) continue
+      const resolved = await getSecret(v.slice('secret://'.length))
+      if (resolved !== null && pr.settingsEnv[k] === resolved) pr.settingsEnv[k] = v
+    }
+  }
+}

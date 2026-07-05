@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeContext } from '../src/context.js'
+import { secretsStore } from '../src/commands/secrets.js'
 import { callApi } from './ui-helpers.js'
 import { envKeyLine, seedRc } from './helpers.js'
 
@@ -62,5 +63,50 @@ describe('ui api: secrets', () => {
     await callApi(ctx, 'POST', '/api/secrets/migrate')
     const res = await callApi(ctx, 'GET', '/api/doctor')
     expect(res._json.problems.join('\n')).not.toMatch(/plaintext token/)
+  })
+
+  it('doctor flags a plaintext token sitting in the manifest (pre-migrate), quiets after migrate', async () => {
+    await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'plain-tok-4' } }))
+    await callApi(ctx, 'POST', '/api/adopt') // manifest.settingsEnv.ANTHROPIC_AUTH_TOKEN is still plaintext here
+    const before = await callApi(ctx, 'GET', '/api/doctor')
+    expect(before._json.problems.join('\n')).toMatch(/plaintext token ANTHROPIC_AUTH_TOKEN in manifest for profile "default"/)
+    await callApi(ctx, 'POST', '/api/secrets/migrate')
+    const after = await callApi(ctx, 'GET', '/api/doctor')
+    expect(after._json.problems.join('\n')).not.toMatch(/plaintext token/)
+  })
+
+  it('re-adopting after migrate preserves the secret ref instead of re-leaking plaintext', async () => {
+    await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'plain-tok-5' } }))
+    await callApi(ctx, 'POST', '/api/adopt')
+    await callApi(ctx, 'POST', '/api/secrets/migrate')
+    let row = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'default')
+    expect(row.settingsEnv.ANTHROPIC_AUTH_TOKEN).toBe('secret://anthropic-auth-token-default')
+
+    // re-adopt: live settings.json still carries the resolved plaintext value (migrate never
+    // touches it) — buildManifest would naively re-import it as plaintext without preserveSecretRefs
+    await callApi(ctx, 'POST', '/api/adopt')
+    row = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'default')
+    expect(row.settingsEnv.ANTHROPIC_AUTH_TOKEN).toBe('secret://anthropic-auth-token-default')
+  })
+
+  it('deleting a secret referenced by a profile settingsEnv is blocked (409)', async () => {
+    await callApi(ctx, 'PUT', '/api/secrets/tok-a', { value: 'sk-a' })
+    await callApi(ctx, 'POST', '/api/adopt')
+    await callApi(ctx, 'PATCH', '/api/profiles/default', { settingsEnv: { ANTHROPIC_AUTH_TOKEN: 'secret://tok-a' } })
+    const res = await callApi(ctx, 'DELETE', '/api/secrets/tok-a')
+    expect(res._status).toBe(409)
+    expect(res._json.error).toMatch(/referenced by profile "default"/)
+    expect((await callApi(ctx, 'GET', '/api/secrets'))._json.names).toContain('tok-a')
+  })
+
+  it('status 409s with "secret not found" when a manifest secret ref goes missing', async () => {
+    await callApi(ctx, 'PUT', '/api/secrets/tok-b', { value: 'sk-b' })
+    await callApi(ctx, 'POST', '/api/adopt')
+    await callApi(ctx, 'PATCH', '/api/profiles/default', { settingsEnv: { ANTHROPIC_AUTH_TOKEN: 'secret://tok-b' } })
+    const store = await secretsStore(ctx)
+    await store.delete('tok-b') // bypass the DELETE route's reference guard directly on the store
+    const res = await callApi(ctx, 'GET', '/api/status')
+    expect(res._status).toBe(409)
+    expect(res._json.error).toMatch(/secret not found/)
   })
 })
