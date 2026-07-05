@@ -1,7 +1,8 @@
 import {
   discoverProfiles, buildManifest, saveManifest, planApply, executeApply,
   ensureRootGitignore, loadManifest, loadDevices, fetchRemote, fetchSecrets,
-  writeAssets, parseManifest, backupFiles, type Manifest,
+  writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
+  atomicWrite, BEGIN_MARK, END_MARK, type Manifest,
 } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -144,6 +145,36 @@ export function buildRoutes(ctx: CliContext): Route[] {
       }
     }
     sendJson(res, 200, { problems })
+  })
+
+  // ── shell rc ────────────────────────────────────────────────────────────────
+  function currentRcBlock(): string | null {
+    if (!existsSync(ctx.platform.rcFile)) return null
+    const rc = readFileSync(ctx.platform.rcFile, 'utf8')
+    const start = rc.indexOf(BEGIN_MARK)
+    const end = rc.indexOf(END_MARK)
+    if (start === -1 || end === -1 || end < start) return null
+    return rc.slice(start, end + END_MARK.length)
+  }
+
+  add('GET', /^\/api\/rc$/, async (_m, _req, res) => {
+    const m = await mustManifest()
+    const rendered = renderRcBlock(m, ctx.platform)
+    const current = currentRcBlock()
+    sendJson(res, 200, { rcFile: ctx.platform.rcFile, current, rendered, inSync: current === rendered })
+  })
+
+  add('POST', /^\/api\/rc$/, async (_m, _req, res) => {
+    const m = await mustManifest()
+    const rendered = renderRcBlock(m, ctx.platform)
+    let rc = ''
+    let backupDir: string | null = null
+    if (existsSync(ctx.platform.rcFile)) {
+      rc = readFileSync(ctx.platform.rcFile, 'utf8')
+      backupDir = await backupFiles([ctx.platform.rcFile], ctx.backupRoot, stamp())
+    }
+    await atomicWrite(ctx.platform.rcFile, upsertManagedBlock(rc, rendered))
+    sendJson(res, 200, { ok: true, backupDir })
   })
 
   // ── mcp ─────────────────────────────────────────────────────────────────────
