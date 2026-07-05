@@ -111,10 +111,15 @@ describe('ui api: secrets', () => {
   })
 
   it('GET /api/secrets returns backend "unavailable" instead of 500 when the store cannot open', async () => {
-    // Force the linux code path (CCPROFILES_FORCE_OS is a test-only seam — see context.ts) with no
-    // CCPROFILES_PASSPHRASE: defaultBackend() probes for `secret-tool`, which isn't installed on the
-    // dev/CI box, so it falls through to the encrypted-file backend and throws for lack of a passphrase.
-    const badCtx = makeContext({ CCPROFILES_TEST_HOME: home, SHELL: '/bin/zsh', CCPROFILES_FORCE_OS: 'linux' } as any)
+    // Force a sentinel OS that is none of darwin/linux/win32 (CCPROFILES_FORCE_OS is a
+    // test-only seam — see context.ts). This is deterministic and host-independent: darwin
+    // always resolves to the keychain, win32 always constructs DpapiBackend, and linux
+    // depends on whether `secret-tool` happens to be installed on the box running the test
+    // (previously this test forced 'linux' and relied on secret-tool being ABSENT, which
+    // fails on any Linux/CI host that has libsecret). The 'none' sentinel instead drives
+    // defaultBackend() straight into its final branch, which throws for lack of a
+    // CCPROFILES_PASSPHRASE regardless of what tools are installed.
+    const badCtx = makeContext({ CCPROFILES_TEST_HOME: home, SHELL: '/bin/zsh', CCPROFILES_FORCE_OS: 'none' } as any)
     const res = await callApi(badCtx, 'GET', '/api/secrets')
     expect(res._status).toBe(200)
     expect(res._json.backend).toBe('unavailable')

@@ -67,24 +67,6 @@ export function SecretsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold flex items-center gap-2">Secrets <Badge variant="secondary">{backend}</Badge></h1>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={async () => {
-            try { const r = await api.migrate(); toast.success(r.migrated.length ? `Migrated ${r.migrated.join(', ')}` : 'No plaintext keys found'); load() } catch (e: any) { toast.error(e.message) }
-          }}>Migrate plaintext keys</Button>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button>Add secret</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add secret</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5"><Label>Name</Label><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="anthropic-api-key" /></div>
-                <div className="space-y-1.5"><Label>Value</Label><Input type="password" value={f.value} onChange={e => setF({ ...f, value: e.target.value })} /></div>
-              </div>
-              <DialogFooter><Button onClick={async () => {
-                try { await api.setSecret(f.name, f.value); toast.success(`Stored ${f.name}`); setOpen(false); setF({ name: '', value: '' }); load() } catch (e: any) { toast.error(e.message) }
-              }}>Save</Button></DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
       </div>
       {backend === 'unavailable' ? (
         <div className="border rounded-lg p-4 text-sm space-y-1">
@@ -95,7 +77,28 @@ export function SecretsPage() {
           </p>
         </div>
       ) : (
-        <div className="divide-y border rounded-lg">
+        <>
+          <div className="flex items-center justify-end">
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={async () => {
+                try { const r = await api.migrate(); toast.success(r.migrated.length ? `Migrated ${r.migrated.join(', ')}` : 'No plaintext keys found'); load() } catch (e: any) { toast.error(e.message) }
+              }}>Migrate plaintext keys</Button>
+              <Dialog open={open} onOpenChange={setOpen}>
+                <DialogTrigger asChild><Button>Add secret</Button></DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Add secret</DialogTitle></DialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-1.5"><Label>Name</Label><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="anthropic-api-key" /></div>
+                    <div className="space-y-1.5"><Label>Value</Label><Input type="password" value={f.value} onChange={e => setF({ ...f, value: e.target.value })} /></div>
+                  </div>
+                  <DialogFooter><Button onClick={async () => {
+                    try { await api.setSecret(f.name, f.value); toast.success(`Stored ${f.name}`); setOpen(false); setF({ name: '', value: '' }); load() } catch (e: any) { toast.error(e.message) }
+                  }}>Save</Button></DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+          <div className="divide-y border rounded-lg">
           {names.map(n => {
             const used = usage(n)
             return (
@@ -122,7 +125,8 @@ export function SecretsPage() {
             )
           })}
           {names.length === 0 && <div className="p-3 text-sm text-muted-foreground">No secrets yet.</div>}
-        </div>
+          </div>
+        </>
       )}
 
       {attaching && (
