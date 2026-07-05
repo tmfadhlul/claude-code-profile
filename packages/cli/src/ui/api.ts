@@ -1,5 +1,5 @@
 import {
-  discoverProfiles, buildManifest, saveManifest, planApply, executeApply,
+  discoverProfiles, buildManifest, saveManifest, executeApply,
   ensureRootGitignore, loadManifest, loadDevices, fetchRemote, fetchSecrets,
   writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
   atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, type Manifest,
@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { requireManifest, type CliContext } from '../context.js'
 import { secretsStore, migrateRcSecrets } from '../commands/secrets.js'
 import { sendJson, readJson, HttpError, type Route } from './http.js'
+import { planActions, planActionsPreflight } from '../plan.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
@@ -22,7 +23,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
   const add = (method: string, pattern: RegExp, handler: Route['handler']) => routes.push({ method, pattern, handler })
 
   async function applyAndReport(m: Manifest) {
-    const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
+    const actions = await planActions(ctx, m)
     return executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp() })
   }
 
@@ -68,6 +69,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
         launcher: decl?.launcher ?? (name === 'default' ? null : `cl-${name}`),
         adopted: !!decl,
         env: decl?.env ?? {}, links: decl?.links ?? {}, mcpNames: decl?.mcp ?? [],
+        settingsEnv: decl?.settingsEnv ?? {},
       }
     })
     sendJson(res, 200, rows)
@@ -97,7 +99,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     const name = decodeURIComponent(mtch[1])
     const pr = m.profiles.find(p => p.name === name)
     if (!pr) throw new HttpError(404, `unknown profile: ${name}`)
-    const body = await readJson<{ env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null }>(req)
+    const body = await readJson<{ env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null; settingsEnv?: Record<string, string> }>(req)
     if (body.env) {
       if (!Object.values(body.env).every(v => typeof v === 'string')) throw new HttpError(400, 'env values must be strings')
       pr.env = body.env
@@ -107,7 +109,12 @@ export function buildRoutes(ctx: CliContext): Route[] {
       pr.links = body.links
     }
     if (body.launcher !== undefined) pr.launcher = body.launcher
+    if (body.settingsEnv) {
+      for (const v of Object.values(body.settingsEnv)) if (typeof v !== 'string') throw new HttpError(400, 'settingsEnv values must be strings')
+      pr.settingsEnv = body.settingsEnv
+    }
     assertSafe(m)
+    try { await planActionsPreflight(ctx, m) } catch (e) { throw new HttpError(400, (e as Error).message) }
     await saveManifest(ctx.manifestRoot, m)
     await applyAndReport(m)
     sendJson(res, 200, { ok: true })
@@ -130,7 +137,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
 
   add('GET', /^\/api\/status$/, async (_m, _req, res) => {
     const m = await mustManifest()
-    const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
+    const actions = await planActions(ctx, m)
     const r = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: true })
     sendJson(res, 200, { inSync: actions.length === 0, pending: r.performed })
   })
@@ -294,7 +301,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       await saveManifest(ctx.manifestRoot, m)
       await writeAssets(assets, m, ctx.platform)
     }
-    const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
+    const actions = await planActions(ctx, m)
     const r = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!dryRun })
     let secrets: string[] = []
     if (withSecrets) {

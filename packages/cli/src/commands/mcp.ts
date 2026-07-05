@@ -1,13 +1,14 @@
 import type { Command } from 'commander'
 import {
-  discoverProfiles, saveManifest, planApply, executeApply, type Manifest,
+  saveManifest, executeApply, type Manifest,
 } from 'ccprofiles-core'
 import { requireManifest, type CliContext } from '../context.js'
+import { planActions } from '../plan.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
 async function applyNow(ctx: CliContext, m: Manifest, dryRun: boolean): Promise<void> {
-  const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
+  const actions = await planActions(ctx, m)
   const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun })
   for (const line of res.performed) console.log(`${dryRun ? '[dry-run] ' : ''}${line}`)
 }
