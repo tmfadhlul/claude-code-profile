@@ -42,4 +42,12 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     const res = await callApi(ctx, 'GET', '/api/doctor')
     expect(Array.isArray(res._json.problems)).toBe(true)
   })
+  it('profiles include env, links, and mcpNames from the manifest', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    await callApi(ctx, 'PATCH', '/api/profiles/default', { env: { FOO: 'bar' } })
+    const row = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'default')
+    expect(row.env).toEqual({ FOO: 'bar' })
+    expect(row.mcpNames).toEqual(['playwright'])
+    expect(row.links).toEqual({})
+  })
 })

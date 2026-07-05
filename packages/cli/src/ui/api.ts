@@ -60,6 +60,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
         account: lp.account, mcp: Object.keys(lp.mcpServers).length,
         launcher: decl?.launcher ?? (name === 'default' ? null : `cl-${name}`),
         adopted: !!decl,
+        env: decl?.env ?? {}, links: decl?.links ?? {}, mcpNames: decl?.mcp ?? [],
       }
     })
     sendJson(res, 200, rows)
