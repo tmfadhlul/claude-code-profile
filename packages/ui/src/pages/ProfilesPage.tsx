@@ -6,14 +6,27 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/sonner'
 import { api } from '@/lib/api'
-
-type Row = { name: string; dir: string; auth: string; account: string | null; mcp: number; launcher: string | null; adopted: boolean }
+import { ProfileEditor, type ProfileRow } from '@/components/ProfileEditor'
 
 export function ProfilesPage() {
-  const [rows, setRows] = useState<Row[]>([])
+  const [rows, setRows] = useState<ProfileRow[]>([])
+  const [servers, setServers] = useState<string[]>([])
+  const [secretNames, setSecretNames] = useState<string[]>([])
   const [name, setName] = useState(''); const [from, setFrom] = useState(''); const [open, setOpen] = useState(false)
-  const load = async () => { try { setRows(await api.profiles()) } catch (e: any) { toast.error(e.message) } }
+  const [editing, setEditing] = useState<ProfileRow | null>(null)
+  const [deleting, setDeleting] = useState<ProfileRow | null>(null)
+
+  const load = async () => {
+    try { setRows(await api.profiles()) } catch (e: any) { toast.error(e.message) }
+    try { setServers((await api.mcp()).servers) } catch { setServers([]) }         // 409 before adopt
+    try { setSecretNames((await api.secrets()).names) } catch { setSecretNames([]) }
+  }
   useEffect(() => { load() }, [])
+
+  const doDelete = async (p: ProfileRow) => {
+    try { await api.deleteProfile(p.name); toast.success(`Removed ${p.name} from manifest`); setDeleting(null); load() }
+    catch (e: any) { toast.error(e.message) }
+  }
 
   return (
     <div className="space-y-4">
@@ -44,20 +57,48 @@ export function ProfilesPage() {
       </div>
       <Table>
         <TableHeader><TableRow>
-          <TableHead>Name</TableHead><TableHead>Auth</TableHead><TableHead>Account</TableHead><TableHead>MCP</TableHead><TableHead>Launcher</TableHead>
+          <TableHead>Name</TableHead><TableHead>Auth</TableHead><TableHead>Account</TableHead><TableHead>MCP</TableHead><TableHead>Launcher</TableHead><TableHead>Env</TableHead><TableHead className="w-32" />
         </TableRow></TableHeader>
         <TableBody>
           {rows.map(r => (
             <TableRow key={r.name}>
-              <TableCell className="font-medium">{r.name}{!r.adopted && <span className="text-muted-foreground"> *</span>}</TableCell>
+              <TableCell className="font-medium">{r.name}{!r.adopted && <span className="text-muted-foreground" title="not in manifest — adopt to manage"> *</span>}</TableCell>
               <TableCell>{r.auth}</TableCell>
               <TableCell className="text-muted-foreground">{r.account ?? '—'}</TableCell>
               <TableCell>{r.mcp}</TableCell>
               <TableCell className="font-mono text-xs">{r.launcher ?? '—'}</TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">{Object.keys(r.env).length || '—'}</TableCell>
+              <TableCell>
+                <div className="flex gap-1 justify-end">
+                  <Button size="sm" variant="ghost" disabled={!r.adopted} title={r.adopted ? undefined : 'Adopt first'} onClick={() => setEditing(r)}>Edit</Button>
+                  <Button size="sm" variant="ghost" disabled={!r.adopted} title={r.adopted ? undefined : 'Adopt first'} onClick={() => setDeleting(r)}>Delete</Button>
+                </div>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
+
+      {editing && (
+        <ProfileEditor profile={editing} servers={servers} secretNames={secretNames}
+          onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />
+      )}
+
+      {deleting && (
+        <Dialog open onOpenChange={o => { if (!o) setDeleting(null) }}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Delete profile "{deleting.name}"?</DialogTitle></DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Removes it from the manifest and drops its launcher from your shell rc on apply.
+              The directory <span className="font-mono">{deleting.dir}</span> stays on disk — re-adopt to manage it again.
+            </p>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => setDeleting(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={() => doDelete(deleting)}>Delete</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }
