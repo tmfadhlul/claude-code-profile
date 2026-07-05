@@ -23,11 +23,14 @@ export interface CliContext {
 export function makeContext(env: NodeJS.ProcessEnv = process.env): CliContext {
   const testHome = env.CCPROFILES_TEST_HOME
   // CCPROFILES_FORCE_OS is a test-only seam for simulating other platforms' secrets-backend
-  // selection from a single dev machine — never set this outside tests.
-  const forcedOs = env.CCPROFILES_FORCE_OS as OsKind | undefined
+  // selection from a single dev machine — never set this outside tests. It intentionally
+  // accepts any sentinel string (not just OsKind): detectPlatform/defaultBackend only ever
+  // compare it against 'darwin'/'linux'/'win32' at runtime, so a value like 'none' safely
+  // flows through as a deterministic "none of the above" platform for tests.
+  const forcedOs = env.CCPROFILES_FORCE_OS
   const platform = detectPlatform({
     ...(testHome ? { home: testHome, shell: env.SHELL } : {}),
-    ...(forcedOs ? { osKind: forcedOs } : {}),
+    ...(forcedOs ? { osKind: forcedOs as OsKind } : {}),
   })
   const manifestRoot = env.CCPROFILES_HOME ?? join(platform.home, '.ccprofiles')
   return {
