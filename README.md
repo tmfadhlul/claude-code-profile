@@ -162,7 +162,7 @@ All mutating commands support `--dry-run`. Every mutation backs up the files it 
 | `error: no manifest yet` | Run `clp adopt --yes` first — it builds the manifest from your existing profiles |
 | `zsh: command not found: clp` | Not linked/installed — see Install; if just linked, run `rehash` |
 | ``cannot reach <host> — is `ccprofiles serve` running?`` | Start `clp serve` on the other device; check you're on the same network and the port matches |
-| `encrypted-file backend requires a passphrase` | Set `CCPROFILES_PASSPHRASE` (Windows / Linux without libsecret) |
+| `encrypted-file backend requires a passphrase` | On Windows, secrets use DPAPI automatically (needs PowerShell); otherwise set `CCPROFILES_PASSPHRASE` (headless Linux without libsecret) |
 | Profile shows account `-` after sync | Expected — run `/login` inside that profile once; OAuth sessions don't sync |
 | Something went wrong after `apply` | Restore from `~/.ccprofiles/backups/<latest>/` |
 
@@ -170,7 +170,6 @@ All mutating commands support `--dry-run`. Every mutation backs up the files it 
 
 - mDNS auto-discovery for `clp devices`
 - Pair devices from the dashboard (currently CLI-only)
-- Windows Credential Manager (DPAPI) secrets backend
 - Interactive prompts (`secrets set` without echoing, `adopt` confirmation)
 
 ## Development
@@ -182,10 +181,6 @@ npm install
 npm test        # vitest — unit + e2e (incl. an in-process two-machine sync test)
 npm run build   # builds core + cli + the dashboard, bundled into the CLI
 ```
-
-## Related projects
-
-Not to be confused with [samhvw8/claude-code-profile](https://github.com/samhvw8/claude-code-profile) (the `ccp` command) — a great tool for a **different** job: a central hub of reusable skills/agents/hooks/commands, with profiles for different *workflows*. It explicitly does **not** handle MCP servers, secrets, LAN sync, or multiple *accounts* — which are exactly this tool's focus. The two are complementary; this one deliberately uses the `clp` / `ccprofiles` commands to avoid clashing with its `ccp`.
 
 ## License
 
