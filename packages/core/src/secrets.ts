@@ -97,7 +97,10 @@ export type DpapiCrypt = { protect(plain: string): Promise<string>; unprotect(b6
 // DPAPI via built-in PowerShell. Secret bytes travel through a spawn env var, never argv.
 export const powershellDpapi: DpapiCrypt = {
   protect: (plain) => runDpapi(
-    "$b=[Text.Encoding]::UTF8.GetBytes($env:CCP_IN);" +
+    // [string] cast coerces a $null CCP_IN (empty env var) to '' before GetBytes, which
+    // otherwise throws on $null. Only needed here — unprotect's CCP_IN is base64 ciphertext
+    // and is never empty for a stored value.
+    "$b=[Text.Encoding]::UTF8.GetBytes([string]$env:CCP_IN);" +
     "[Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect($b,$null,'CurrentUser'))",
     plain),
   unprotect: async (b64) => {
