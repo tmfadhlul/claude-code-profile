@@ -37,6 +37,7 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
       env: {},
       links,
       mcp: Object.keys(lp.mcpServers).sort(),
+      settingsEnv: {},
     }
   })
 

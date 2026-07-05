@@ -84,6 +84,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       name, dir: `{home}/.claude-${name}`, launcher: `cl-${name}`, auth: 'env', env: {},
       links: src ? { ...src.links } : (m.hub ? { skills: 'hub', commands: 'hub' } : {}),
       mcp: src ? [...src.mcp] : [],
+      settingsEnv: {},
     })
     assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)

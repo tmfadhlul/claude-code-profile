@@ -9,7 +9,7 @@ const sample = {
   hub: 'default',
   profiles: [{
     name: 'oauth', dir: '{home}/.claude-oauth', launcher: 'cl-auth',
-    auth: 'oauth' as const, env: {}, links: { skills: 'hub', commands: 'hub' }, mcp: ['playwright'],
+    auth: 'oauth' as const, env: {}, links: { skills: 'hub', commands: 'hub' }, mcp: ['playwright'], settingsEnv: {},
   }],
   mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
 }
@@ -51,6 +51,39 @@ describe('manifest', () => {
     })
     it('accepts a normal profile', () => {
       expect(() => parseManifest(withProfile({ launcher: 'cl-work', env: { TOKEN: 'secret://z-token' } }))).not.toThrow()
+    })
+  })
+
+  describe('settingsEnv', () => {
+    const base = (settingsEnv: string) => `
+version: 1
+hub: null
+profiles:
+  - name: z
+    dir: "{home}/.claude-z"
+    launcher: cl-z
+    auth: env
+    env: {}
+    links: {}
+    mcp: []
+${settingsEnv}
+mcpServers: {}
+`
+    it('parses settingsEnv and defaults to {}', () => {
+      const m = parseManifest(base(`    settingsEnv:\n      ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic"\n      API_TIMEOUT_MS: "3000000"`))
+      expect(m.profiles[0].settingsEnv.ANTHROPIC_BASE_URL).toBe('https://api.z.ai/api/anthropic')
+      const m2 = parseManifest(base(''))
+      expect(m2.profiles[0].settingsEnv).toEqual({})
+    })
+    it('rejects unsafe settingsEnv key', () => {
+      expect(() => parseManifest(base(`    settingsEnv:\n      "BAD KEY": "x"`))).toThrow(/unsafe settings env var name/)
+    })
+    it('rejects empty or unsafe secret ref in settingsEnv', () => {
+      expect(() => parseManifest(base(`    settingsEnv:\n      ANTHROPIC_AUTH_TOKEN: "secret://"`))).toThrow(/unsafe secret reference/)
+    })
+    it('allows freeform values (urls, dollars) in settingsEnv', () => {
+      const m = parseManifest(base(`    settingsEnv:\n      FOO: "has $dollar and \\"quotes\\" and ; semicolons"`))
+      expect(m.profiles[0].settingsEnv.FOO).toContain('$dollar')
     })
   })
 })
