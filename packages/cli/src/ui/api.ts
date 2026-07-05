@@ -2,7 +2,7 @@ import {
   discoverProfiles, buildManifest, saveManifest, planApply, executeApply,
   ensureRootGitignore, loadManifest, loadDevices, fetchRemote, fetchSecrets,
   writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
-  atomicWrite, BEGIN_MARK, END_MARK, type Manifest,
+  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, type Manifest,
 } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -30,6 +30,12 @@ export function buildRoutes(ctx: CliContext): Route[] {
   async function mustManifest(): Promise<Manifest> {
     try { return await requireManifest(ctx) }
     catch (e) { throw new HttpError(409, (e as Error).message) }
+  }
+
+  // Guard mutation routes: never persist a manifest that would interpolate unsafely into the rc file.
+  function assertSafe(m: Manifest): void {
+    try { assertSafeManifest(m) }
+    catch (e) { throw new HttpError(400, (e as Error).message) }
   }
 
   function targetsOf(m: Manifest, targets: string[] | 'all'): string[] {
@@ -79,6 +85,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       links: src ? { ...src.links } : (m.hub ? { skills: 'hub', commands: 'hub' } : {}),
       mcp: src ? [...src.mcp] : [],
     })
+    assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)
     await applyAndReport(m)
     sendJson(res, 200, { ok: true })
@@ -86,12 +93,20 @@ export function buildRoutes(ctx: CliContext): Route[] {
 
   add('PATCH', /^\/api\/profiles\/([^/]+)$/, async (mtch, req, res) => {
     const m = await mustManifest()
-    const pr = m.profiles.find(p => p.name === mtch[1])
-    if (!pr) throw new HttpError(404, `unknown profile: ${mtch[1]}`)
+    const name = decodeURIComponent(mtch[1])
+    const pr = m.profiles.find(p => p.name === name)
+    if (!pr) throw new HttpError(404, `unknown profile: ${name}`)
     const body = await readJson<{ env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null }>(req)
-    if (body.env) pr.env = body.env
-    if (body.links) pr.links = body.links
+    if (body.env) {
+      if (!Object.values(body.env).every(v => typeof v === 'string')) throw new HttpError(400, 'env values must be strings')
+      pr.env = body.env
+    }
+    if (body.links) {
+      if (!Object.values(body.links).every(v => typeof v === 'string')) throw new HttpError(400, 'links values must be strings')
+      pr.links = body.links
+    }
     if (body.launcher !== undefined) pr.launcher = body.launcher
+    assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)
     await applyAndReport(m)
     sendJson(res, 200, { ok: true })
@@ -106,6 +121,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     m.profiles.splice(idx, 1)
     for (const s of Object.keys(m.mcpServers))
       if (!m.profiles.some(p => p.mcp.includes(s))) delete m.mcpServers[s]
+    assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)
     await applyAndReport(m)
     sendJson(res, 200, { ok: true })
@@ -198,6 +214,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       const pr = m.profiles.find(p => p.name === t)!
       if (!pr.mcp.includes(name)) pr.mcp.push(name)
     }
+    assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)
     await applyAndReport(m)
     sendJson(res, 200, { ok: true })
@@ -212,6 +229,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       pr.mcp = pr.mcp.filter(x => x !== name)
     }
     if (!m.profiles.some(p => p.mcp.includes(name))) delete m.mcpServers[name]
+    assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)
     await applyAndReport(m)
     sendJson(res, 200, { ok: true })
@@ -226,6 +244,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       if (t === src.name) continue
       m.profiles.find(p => p.name === t)!.mcp = [...src.mcp]
     }
+    assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)
     await applyAndReport(m)
     sendJson(res, 200, { ok: true })

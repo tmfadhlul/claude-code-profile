@@ -37,6 +37,8 @@ export function ProfileEditor({ profile, servers, secretNames, onClose, onSaved 
   const setLinkAt = (i: number, patch: Partial<KvRow>) => setLinks(links.map((r, j) => j === i ? { ...r, ...patch } : r))
 
   const save = async () => {
+    const missingSecret = env.find(r => r.secret && !r.value)
+    if (missingSecret) { toast.error(`pick a secret for ${missingSecret.key || 'env var'}`); return }
     setSaving(true)
     try {
       const envObj: Record<string, string> = {}
