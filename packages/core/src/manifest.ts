@@ -24,6 +24,7 @@ const ProfileSchema = z.object({
   env: z.record(z.string()).default({}),
   links: z.record(z.string()).default({}),
   mcp: z.array(z.string()).default([]),
+  settingsEnv: z.record(z.string()).default({}),
 })
 
 const ManifestSchema = z.object({
@@ -55,6 +56,13 @@ export function assertSafeManifest(m: Manifest): void {
     if (SHELL_META.test(p.dir)) throw new ManifestError(`unsafe profile dir in profile "${p.name}": ${JSON.stringify(p.dir)}`)
     for (const [k, v] of Object.entries(p.env)) {
       if (!SAFE_ENV_KEY.test(k)) throw new ManifestError(`unsafe env var name in profile "${p.name}": ${JSON.stringify(k)}`)
+      if (v.startsWith(SECRET_PREFIX)) {
+        const ref = v.slice(SECRET_PREFIX.length)
+        if (!SAFE_NAME.test(ref)) throw new ManifestError(`unsafe secret reference in profile "${p.name}": ${JSON.stringify(v)}`)
+      }
+    }
+    for (const [k, v] of Object.entries(p.settingsEnv)) {
+      if (!SAFE_ENV_KEY.test(k)) throw new ManifestError(`unsafe settings env var name in profile "${p.name}": ${JSON.stringify(k)}`)
       if (v.startsWith(SECRET_PREFIX)) {
         const ref = v.slice(SECRET_PREFIX.length)
         if (!SAFE_NAME.test(ref)) throw new ManifestError(`unsafe secret reference in profile "${p.name}": ${JSON.stringify(v)}`)
