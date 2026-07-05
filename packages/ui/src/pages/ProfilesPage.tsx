@@ -8,6 +8,12 @@ import { toast } from '@/components/ui/sonner'
 import { api } from '@/lib/api'
 import { ProfileEditor, type ProfileRow } from '@/components/ProfileEditor'
 
+function providerHost(r: ProfileRow): string {
+  const u = r.settingsEnv?.ANTHROPIC_BASE_URL
+  if (!u) return '—'
+  try { return new URL(u).host } catch { return u }
+}
+
 export function ProfilesPage() {
   const [rows, setRows] = useState<ProfileRow[]>([])
   const [servers, setServers] = useState<string[]>([])
@@ -57,7 +63,7 @@ export function ProfilesPage() {
       </div>
       <Table>
         <TableHeader><TableRow>
-          <TableHead>Name</TableHead><TableHead>Auth</TableHead><TableHead>Account</TableHead><TableHead>MCP</TableHead><TableHead>Launcher</TableHead><TableHead>Env</TableHead><TableHead className="w-32" />
+          <TableHead>Name</TableHead><TableHead>Auth</TableHead><TableHead>Account</TableHead><TableHead>MCP</TableHead><TableHead>Launcher</TableHead><TableHead>Provider</TableHead><TableHead>Env</TableHead><TableHead className="w-32" />
         </TableRow></TableHeader>
         <TableBody>
           {rows.map(r => (
@@ -67,6 +73,7 @@ export function ProfilesPage() {
               <TableCell className="text-muted-foreground">{r.account ?? '—'}</TableCell>
               <TableCell>{r.mcp}</TableCell>
               <TableCell className="font-mono text-xs">{r.launcher ?? '—'}</TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">{providerHost(r)}</TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">{Object.keys(r.env).length || '—'}</TableCell>
               <TableCell>
                 <div className="flex gap-1 justify-end">

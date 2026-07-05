@@ -11,6 +11,7 @@ export type ProfileRow = {
   name: string; dir: string; auth: string; account: string | null; mcp: number
   launcher: string | null; adopted: boolean
   env: Record<string, string>; links: Record<string, string>; mcpNames: string[]
+  settingsEnv: Record<string, string>
 }
 
 const SECRET_PREFIX = 'secret://'
@@ -23,29 +24,62 @@ function toEnvRows(env: Record<string, string>): EnvRow[] {
     : { key, value, secret: false })
 }
 
+function fromEnvRows(rows: EnvRow[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const r of rows) if (r.key.trim()) out[r.key.trim()] = r.secret ? SECRET_PREFIX + r.value : r.value
+  return out
+}
+
+function EnvRowsEditor({ rows, onChange, secretNames, keyPlaceholder }: {
+  rows: EnvRow[]; onChange: (rows: EnvRow[]) => void; secretNames: string[]; keyPlaceholder: string
+}) {
+  const setAt = (i: number, patch: Partial<EnvRow>) => onChange(rows.map((r, j) => j === i ? { ...r, ...patch } : r))
+  return (
+    <>
+      {rows.map((r, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Input className="w-56 font-mono text-xs" value={r.key} onChange={e => setAt(i, { key: e.target.value })} placeholder={keyPlaceholder} />
+          {r.secret ? (
+            <select className="flex-1 border rounded-md h-9 px-2 bg-background text-sm" value={r.value} onChange={e => setAt(i, { value: e.target.value })}>
+              <option value="">— pick secret —</option>
+              {secretNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          ) : (
+            <Input className="flex-1 font-mono text-xs" value={r.value} onChange={e => setAt(i, { value: e.target.value })} />
+          )}
+          <label className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
+            <input type="checkbox" checked={r.secret} onChange={e => setAt(i, { secret: e.target.checked, value: '' })} />secret
+          </label>
+          <Button size="sm" variant="ghost" onClick={() => onChange(rows.filter((_, j) => j !== i))}><X className="h-4 w-4" /></Button>
+        </div>
+      ))}
+      <Button size="sm" variant="secondary" onClick={() => onChange([...rows, { key: '', value: '', secret: false }])}>Add env var</Button>
+    </>
+  )
+}
+
 export function ProfileEditor({ profile, servers, secretNames, onClose, onSaved }: {
   profile: ProfileRow; servers: string[]; secretNames: string[]
   onClose: () => void; onSaved: () => void
 }) {
   const [launcher, setLauncher] = useState(profile.launcher ?? '')
   const [env, setEnv] = useState<EnvRow[]>(toEnvRows(profile.env))
+  const [senv, setSenv] = useState<EnvRow[]>(toEnvRows(profile.settingsEnv))
   const [links, setLinks] = useState<KvRow[]>(Object.entries(profile.links).map(([key, value]) => ({ key, value })))
   const [mcp, setMcp] = useState<string[]>(profile.mcpNames)
   const [saving, setSaving] = useState(false)
 
-  const setEnvAt = (i: number, patch: Partial<EnvRow>) => setEnv(env.map((r, j) => j === i ? { ...r, ...patch } : r))
   const setLinkAt = (i: number, patch: Partial<KvRow>) => setLinks(links.map((r, j) => j === i ? { ...r, ...patch } : r))
 
   const save = async () => {
-    const missingSecret = env.find(r => r.secret && !r.value)
-    if (missingSecret) { toast.error(`pick a secret for ${missingSecret.key || 'env var'}`); return }
+    for (const r of [...env, ...senv]) if (r.secret && !r.value) { toast.error(`pick a secret for ${r.key || 'env var'}`); return }
     setSaving(true)
     try {
-      const envObj: Record<string, string> = {}
-      for (const r of env) if (r.key.trim()) envObj[r.key.trim()] = r.secret ? SECRET_PREFIX + r.value : r.value
       const linksObj: Record<string, string> = {}
       for (const r of links) if (r.key.trim()) linksObj[r.key.trim()] = r.value
-      await api.patchProfile(profile.name, { env: envObj, links: linksObj, launcher: launcher.trim() || null })
+      await api.patchProfile(profile.name, {
+        env: fromEnvRows(env), settingsEnv: fromEnvRows(senv), links: linksObj, launcher: launcher.trim() || null,
+      })
       for (const s of mcp.filter(s => !profile.mcpNames.includes(s))) await api.addMcp({ name: s, targets: [profile.name] })
       for (const s of profile.mcpNames.filter(s => !mcp.includes(s))) await api.rmMcp(s, [profile.name])
       toast.success(`Saved ${profile.name}`)
@@ -64,25 +98,14 @@ export function ProfileEditor({ profile, servers, secretNames, onClose, onSaved 
           </div>
 
           <div className="space-y-1.5">
-            <Label>Environment variables</Label>
-            {env.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Input className="w-56 font-mono text-xs" value={r.key} onChange={e => setEnvAt(i, { key: e.target.value })} placeholder="ANTHROPIC_API_KEY" />
-                {r.secret ? (
-                  <select className="flex-1 border rounded-md h-9 px-2 bg-background text-sm" value={r.value} onChange={e => setEnvAt(i, { value: e.target.value })}>
-                    <option value="">— pick secret —</option>
-                    {secretNames.map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                ) : (
-                  <Input className="flex-1 font-mono text-xs" value={r.value} onChange={e => setEnvAt(i, { value: e.target.value })} />
-                )}
-                <label className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
-                  <input type="checkbox" checked={r.secret} onChange={e => setEnvAt(i, { secret: e.target.checked, value: '' })} />secret
-                </label>
-                <Button size="sm" variant="ghost" onClick={() => setEnv(env.filter((_, j) => j !== i))}><X className="h-4 w-4" /></Button>
-              </div>
-            ))}
-            <Button size="sm" variant="secondary" onClick={() => setEnv([...env, { key: '', value: '', secret: false }])}>Add env var</Button>
+            <Label>Launcher env (exported by the shell function)</Label>
+            <EnvRowsEditor rows={env} onChange={setEnv} secretNames={secretNames} keyPlaceholder="ANTHROPIC_API_KEY" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Provider settings (settings.json env)</Label>
+            <p className="text-xs text-muted-foreground">Base URL, auth token, model mappings — written into this profile's settings.json. Secret values resolve from the keychain on apply.</p>
+            <EnvRowsEditor rows={senv} onChange={setSenv} secretNames={secretNames} keyPlaceholder="ANTHROPIC_BASE_URL" />
           </div>
 
           <div className="space-y-1.5">
