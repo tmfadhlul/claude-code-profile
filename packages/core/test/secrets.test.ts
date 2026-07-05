@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FileBackend, KeychainBackend, SecretsStore } from '../src/secrets.js'
+import { FileBackend, KeychainBackend, SecretsStore, DpapiBackend } from '../src/secrets.js'
 
 describe('FileBackend', () => {
   it('round-trips and deletes', async () => {
@@ -38,5 +38,29 @@ describe('SecretsStore', () => {
     const store = new SecretsStore(new FileBackend(join(dir, 's.enc'), 'pw'), join(dir, 'index.json'))
     await store.set('a', '1'); await store.set('b', '2'); await store.delete('a')
     expect(await store.list()).toEqual(['b'])
+  })
+})
+
+describe('DpapiBackend', () => {
+  // Fake DPAPI: base64 round-trip stands in for real PowerShell/ProtectedData.
+  const fakeCrypt = {
+    protect: async (plain: string) => Buffer.from(plain, 'utf8').toString('base64'),
+    unprotect: async (b64: string) => Buffer.from(b64, 'base64').toString('utf8'),
+  }
+  it('set/get/delete round-trips via the injected crypt', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ccp-dpapi-'))
+    const b = new DpapiBackend(join(dir, 'secrets.dpapi.json'), fakeCrypt)
+    expect(await b.get('missing')).toBeNull()
+    await b.set('k', 'super-secret')
+    expect(await b.get('k')).toBe('super-secret')
+    await b.delete('k')
+    expect(await b.get('k')).toBeNull()
+  })
+  it('persists ciphertext, not plaintext, on disk', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ccp-dpapi2-'))
+    const file = join(dir, 'secrets.dpapi.json')
+    await new DpapiBackend(file, fakeCrypt).set('k', 'plaintext-value')
+    const raw = await readFile(file, 'utf8')
+    expect(raw).not.toContain('plaintext-value')
   })
 })
