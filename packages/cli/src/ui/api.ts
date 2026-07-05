@@ -96,6 +96,20 @@ export function buildRoutes(ctx: CliContext): Route[] {
     sendJson(res, 200, { ok: true })
   })
 
+  add('DELETE', /^\/api\/profiles\/([^/]+)$/, async (mtch, _req, res) => {
+    const m = await mustManifest()
+    const name = decodeURIComponent(mtch[1])
+    const idx = m.profiles.findIndex(p => p.name === name)
+    if (idx === -1) throw new HttpError(404, `unknown profile: ${name}`)
+    if (m.hub === name) throw new HttpError(400, `profile "${name}" is the hub — change the hub first`)
+    m.profiles.splice(idx, 1)
+    for (const s of Object.keys(m.mcpServers))
+      if (!m.profiles.some(p => p.mcp.includes(s))) delete m.mcpServers[s]
+    await saveManifest(ctx.manifestRoot, m)
+    await applyAndReport(m)
+    sendJson(res, 200, { ok: true })
+  })
+
   add('GET', /^\/api\/status$/, async (_m, _req, res) => {
     const m = await mustManifest()
     const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
