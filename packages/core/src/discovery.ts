@@ -9,6 +9,7 @@ export interface LiveProfile {
   account: string | null
   mcpServers: Record<string, McpServerDef>
   links: Record<string, string>
+  settingsEnv: Record<string, string>
 }
 
 export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
@@ -30,6 +31,12 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
         } catch { /* skip */ }
       }
     }
+    const settingsEnv: Record<string, string> = {}
+    try {
+      const s = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8'))
+      if (s && typeof s.env === 'object' && s.env !== null)
+        for (const [k, v] of Object.entries(s.env)) if (typeof v === 'string') settingsEnv[k] = v
+    } catch { /* no settings.json */ }
     out.push({
       dirName: e.name,
       dir,
@@ -37,6 +44,7 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
       account: cfg?.oauthAccount?.emailAddress ?? null,
       mcpServers: cfg?.mcpServers ?? {},
       links,
+      settingsEnv,
     })
   }
   return out.sort((a, b) => a.dirName.localeCompare(b.dirName))

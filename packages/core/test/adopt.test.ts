@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { buildManifest } from '../src/adopt.js'
 import { detectPlatform } from '../src/platform.js'
-import type { LiveProfile } from '../src/discovery.js'
+import { discoverProfiles, type LiveProfile } from '../src/discovery.js'
 
 const p = detectPlatform({ osKind: 'darwin', home: '/Users/x', shell: '/bin/zsh' })
 const live: LiveProfile[] = [
@@ -28,5 +31,13 @@ describe('buildManifest', () => {
   })
   it('templates dirs', () => {
     expect(m.profiles.find(x => x.name === 'oauth')!.dir).toBe('{home}/.claude-oauth')
+  })
+  it('imports live settingsEnv into the manifest', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-adopt-senv-'))
+    await mkdir(join(home, '.claude'), { recursive: true })
+    await writeFile(join(home, '.claude.json'), '{}')
+    await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' } }))
+    const m = buildManifest(await discoverProfiles(home), detectPlatform({ home, shell: '/bin/zsh' }))
+    expect(m.profiles[0].settingsEnv.ANTHROPIC_BASE_URL).toBe('https://api.z.ai/api/anthropic')
   })
 })

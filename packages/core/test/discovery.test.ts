@@ -35,4 +35,23 @@ describe('discoverProfiles', () => {
     const oauth = (await discoverProfiles(home)).find(p => p.dirName === '.claude-oauth')!
     expect(oauth.links.skills).toBe(join(home, '.claude', 'skills'))
   })
+  it('reads settingsEnv from settings.json, skipping non-strings', async () => {
+    const home2 = await mkdtemp(join(tmpdir(), 'ccp-disc-senv-'))
+    await mkdir(join(home2, '.claude-z'), { recursive: true })
+    await writeFile(join(home2, '.claude-z', '.claude.json'), '{}')
+    await writeFile(join(home2, '.claude-z', 'settings.json'), JSON.stringify({
+      env: { ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic', NUM: 42 },
+      model: 'opus',
+    }))
+    const live = await discoverProfiles(home2)
+    const z = live.find(l => l.dirName === '.claude-z')!
+    expect(z.settingsEnv).toEqual({ ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' })
+  })
+  it('settingsEnv is {} when settings.json is absent or invalid', async () => {
+    const home3 = await mkdtemp(join(tmpdir(), 'ccp-disc-senv2-'))
+    await mkdir(join(home3, '.claude'), { recursive: true })
+    await writeFile(join(home3, '.claude.json'), '{}')
+    const live = await discoverProfiles(home3)
+    expect(live[0].settingsEnv).toEqual({})
+  })
 })
