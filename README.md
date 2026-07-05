@@ -7,6 +7,8 @@ Run Claude Code with several accounts — personal subscription, work OAuth, API
 The `clp` command (also available as `ccprofiles`) fixes that:
 
 - 🔎 **Adopt** your existing `.claude*` directories into a declarative manifest — zero manual config
+- 🎛️ **Set up profiles the easy way** — a guided web form to create, edit, and delete profiles: launcher, env, links, MCP, and provider — no hand-editing config files
+- 🌐 **Custom LLM providers per profile** — point a profile at z.ai (GLM), mimo, OpenRouter, or any Anthropic-compatible endpoint with a preset picker; base URL + token + model mappings managed for you, token kept in the keychain
 - 🧩 **Manage MCP servers** across profiles: drift matrix, add/remove everywhere at once, sync one profile's set to others
 - 🔐 **Secrets out of your rc files** — macOS Keychain / libsecret / encrypted file, with `clp secrets migrate` to clean up existing plaintext keys
 - 🖥️ **Replicate to another machine over LAN** — PIN pairing, end-to-end encrypted, no cloud, works macOS ↔ Windows ↔ Linux ↔ WSL
@@ -64,6 +66,31 @@ clp create work --from oauth     # dir + launcher fn + copied MCP set
 cl-work                          # launches claude with CLAUDE_CONFIG_DIR=~/.claude-work
 ```
 
+### Point a profile at a custom LLM provider
+
+Run a profile against z.ai (GLM), mimo, OpenRouter, or any Anthropic-compatible
+endpoint — Claude Code reads the provider config from that profile's `settings.json`,
+and `clp` manages it for you. The easiest path is the **web dashboard**: open a profile
+→ **Edit → Provider**, pick a preset (or *Custom*), fill in the base URL, choose a
+keychain secret for the auth token, and optionally map the opus/sonnet/haiku model
+names. You can also **copy provider settings from another profile** in one click.
+
+Already configured a provider by hand in `settings.json`? `clp adopt` imports it, and
+`clp secrets migrate` moves the plaintext token into your keychain (the manifest then
+references it as `secret://…`, resolved at apply time):
+
+```bash
+clp adopt --yes          # imports each profile's settings.json env, incl. provider config
+clp secrets migrate      # moves ANTHROPIC_AUTH_TOKEN / API_KEY into the keychain
+clp doctor               # flags any provider token still sitting in plaintext
+```
+
+Under the hood this is a generic per-profile env map written into `settings.json`
+(`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_DEFAULT_*_MODEL`, …), so
+anything Claude Code supports works — the form just gives the common keys friendly
+labels and a preset for the base URL. It travels with sync and bundles like everything
+else, token included (via the encrypted secrets channel).
+
 ### Replicate to a second machine
 
 ```bash
@@ -90,13 +117,19 @@ Two things intentionally don't travel:
 clp ui                   # opens http://127.0.0.1:<port>/?t=<token> in your browser
 ```
 
-A local panel to manage profiles, MCP servers (interactive drift matrix), secrets (add / reveal / delete / migrate), sync, and doctor — everything the CLI does. It's **localhost-only** and guarded by a per-launch session token plus an Origin check, so nothing off your machine (and no website in your browser) can reach the API. Pass `--no-open` to just print the URL, or `--port <n>` to pin the port.
+A local panel to manage everything the CLI does — and the easiest way to set profiles up:
+
+- **Profiles** — create, edit, and delete profiles from a form: launcher function, environment variables, links, MCP toggles, and a **guided Provider section** (preset picker for z.ai / mimo / OpenRouter / Anthropic-default / Custom, labeled base-URL / token / model fields, copy-from-another-profile, and an *Advanced* raw editor for any other `settings.json` env var). Deleting a profile is manifest-only — the `~/.claude-*` directory stays on disk.
+- **Shell RC** — preview the managed block in your `.zshrc`/`.bashrc` vs. what the manifest renders, with a one-click update.
+- **MCP servers** (interactive drift matrix), **Secrets** (add / reveal / delete / migrate, plus attach a secret to a profile as an env var), **Sync**, and **Doctor**.
+
+It's **localhost-only** and guarded by a per-launch session token plus an Origin check, so nothing off your machine (and no website in your browser) can reach the API. Pass `--no-open` to just print the URL, or `--port <n>` to pin the port.
 
 ## How it works
 
 Three layers of state:
 
-1. **Live state** — your actual `.claude*` dirs and shell rc files. Claude Code owns these; the tool edits only the keys it manages (`mcpServers`, its marked rc block, its links).
+1. **Live state** — your actual `.claude*` dirs and shell rc files. Claude Code owns these; the tool edits only the keys it manages (`mcpServers` and the `env` block in `settings.json`, its marked rc block, its links).
 2. **Manifest** — `~/.ccprofiles/manifest.yaml`, a platform-neutral declaration (paths templated as `{home}`, secrets referenced as `secret://name`). Versioned with local git commits; safe to share.
 3. **Secrets store** — per-machine keychain: macOS Keychain, Linux `secret-tool` (libsecret), or an AES-256-GCM encrypted file as fallback (native Windows and headless Linux — set `CCPROFILES_PASSPHRASE` in your environment for it). Values never appear in the manifest, bundles, or rc files; launcher functions resolve them at run time by calling the CLI.
 
@@ -112,7 +145,7 @@ Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN sh
 
 | Area | Commands |
 |---|---|
-| Profiles | `list` · `create <name> [--from p]` · `adopt [--yes]` · `doctor` |
+| Profiles | `list` · `create <name> [--from p]` · `adopt [--yes]` · `doctor` (create/edit/delete + provider config: use `clp ui`) |
 | MCP | `mcp list` · `mcp add/rm <name> [--profile p\|--all]` · `mcp sync --from p --to p1,p2\|--all` |
 | Secrets | `secrets set/get/list/rm` · `secrets migrate` |
 | Manifest | `status` · `apply` · `snapshot` |
