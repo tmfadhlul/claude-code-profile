@@ -100,10 +100,16 @@ export const powershellDpapi: DpapiCrypt = {
     "$b=[Text.Encoding]::UTF8.GetBytes($env:CCP_IN);" +
     "[Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect($b,$null,'CurrentUser'))",
     plain),
-  unprotect: (b64) => runDpapi(
-    "$b=[Convert]::FromBase64String($env:CCP_IN);" +
-    "[Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect($b,$null,'CurrentUser'))",
-    b64),
+  unprotect: async (b64) => {
+    // PS emits base64 of the *decrypted bytes* (not the decoded string) so runDpapi's
+    // trim is always ASCII-safe and we never depend on the PowerShell console's
+    // stdout encoding to round-trip arbitrary plaintext (e.g. non-ASCII, trailing whitespace).
+    const out = await runDpapi(
+      "$b=[Convert]::FromBase64String($env:CCP_IN);" +
+      "[Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Unprotect($b,$null,'CurrentUser'))",
+      b64)
+    return Buffer.from(out, 'base64').toString('utf8')
+  },
 }
 
 async function runDpapi(script: string, input: string): Promise<string> {
@@ -112,12 +118,14 @@ async function runDpapi(script: string, input: string): Promise<string> {
     const proc = child.spawn(
       'powershell',
       ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Security;' + script],
-      { env: { ...process.env, CCP_IN: input }, stdio: ['ignore', 'pipe', 'ignore'] },
+      { env: { ...process.env, CCP_IN: input }, stdio: ['ignore', 'pipe', 'pipe'] },
     )
     let out = ''
+    let err = ''
     proc.stdout.on('data', d => { out += d })
+    proc.stderr.on('data', d => { err += d })
     proc.on('error', reject)
-    proc.on('close', code => (code === 0 ? resolve(out.trim()) : reject(new Error(`powershell dpapi exited ${code}`))))
+    proc.on('close', code => (code === 0 ? resolve(out.trim()) : reject(new Error(`powershell dpapi exited ${code}: ${err.trim()}`))))
   })
 }
 
