@@ -4,16 +4,18 @@ import { StatusPage } from '@/pages/StatusPage'
 import { ProfilesPage } from '@/pages/ProfilesPage'
 import { McpPage } from '@/pages/McpPage'
 import { SecretsPage } from '@/pages/SecretsPage'
+import { RcPage } from '@/pages/RcPage'
 import { SyncPage } from '@/pages/SyncPage'
 import { DoctorPage } from '@/pages/DoctorPage'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, Boxes, KeyRound, RefreshCw, Stethoscope } from 'lucide-react'
+import { LayoutDashboard, Users, Boxes, KeyRound, RefreshCw, Stethoscope, Terminal } from 'lucide-react'
 
 const TABS = [
   ['status', 'Status', LayoutDashboard],
   ['profiles', 'Profiles', Users],
   ['mcp', 'MCP', Boxes],
   ['secrets', 'Secrets', KeyRound],
+  ['rc', 'Shell RC', Terminal],
   ['sync', 'Sync', RefreshCw],
   ['doctor', 'Doctor', Stethoscope],
 ] as const
@@ -43,6 +45,7 @@ export default function App() {
         {tab === 'profiles' && <ProfilesPage />}
         {tab === 'mcp' && <McpPage />}
         {tab === 'secrets' && <SecretsPage />}
+        {tab === 'rc' && <RcPage />}
         {tab === 'sync' && <SyncPage />}
         {tab === 'doctor' && <DoctorPage />}
       </main>
