@@ -1,15 +1,40 @@
 {
   "name": "claude-account-sync",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Manage multiple Claude Code accounts/profiles — MCP drift sync, keychain secrets, and encrypted LAN replication between machines. CLI: ccprofiles (alias clp).",
   "type": "module",
-  "bin": { "ccprofiles": "./dist/index.js", "clp": "./dist/index.js" },
-  "files": ["dist", "README.md"],
+  "bin": {
+    "ccprofiles": "./dist/index.js",
+    "clp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/tmfadhlul/claude-code-profile.git", "directory": "packages/cli" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tmfadhlul/claude-code-profile.git",
+    "directory": "packages/cli"
+  },
   "homepage": "https://github.com/tmfadhlul/claude-code-profile#readme",
   "bugs": "https://github.com/tmfadhlul/claude-code-profile/issues",
-  "keywords": ["claude-code", "claude", "profiles", "accounts", "mcp", "cli", "sync", "multi-account", "keychain"],
-  "engines": { "node": ">=20" },
-  "dependencies": { "ccprofiles-core": "^0.1.1", "commander": "^12.1.0" }
+  "keywords": [
+    "claude-code",
+    "claude",
+    "profiles",
+    "accounts",
+    "mcp",
+    "cli",
+    "sync",
+    "multi-account",
+    "keychain"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ccprofiles-core": "^0.2.0",
+    "commander": "^12.1.0"
+  }
 }
