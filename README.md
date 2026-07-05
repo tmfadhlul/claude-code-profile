@@ -4,13 +4,14 @@
 
 Run Claude Code with several accounts — personal subscription, work OAuth, API key, alternative providers — each in its own `CLAUDE_CONFIG_DIR`? Then you know the pain: MCP server lists drift apart, skills get shared via hand-made symlinks, API keys end up in plaintext in your `.zshrc`, and setting up a second machine means an afternoon of copy-paste.
 
-The `ccprofiles` command (short alias `clp`) fixes that:
+The `clp` command (also available as `ccprofiles`) fixes that:
 
 - 🔎 **Adopt** your existing `.claude*` directories into a declarative manifest — zero manual config
 - 🧩 **Manage MCP servers** across profiles: drift matrix, add/remove everywhere at once, sync one profile's set to others
-- 🔐 **Secrets out of your rc files** — macOS Keychain / libsecret / encrypted file, with `ccprofiles secrets migrate` to clean up existing plaintext keys
+- 🔐 **Secrets out of your rc files** — macOS Keychain / libsecret / encrypted file, with `clp secrets migrate` to clean up existing plaintext keys
 - 🖥️ **Replicate to another machine over LAN** — PIN pairing, end-to-end encrypted, no cloud, works macOS ↔ Windows ↔ Linux ↔ WSL
-- 📦 **Offline bundles** for the no-network case (`ccprofiles export setup.ccb`)
+- 🖼️ **Web dashboard** — `clp ui` opens a local browser panel to manage everything visually
+- 📦 **Offline bundles** for the no-network case (`clp export setup.ccb`)
 - 🛟 **Safe by design**: surgical config edits only, automatic backups, `--dry-run` everywhere, never touches your sessions/history
 
 ## Install
@@ -21,7 +22,7 @@ Requires **Node ≥ 20** (you have it — Claude Code needs it too).
 npm install -g claude-account-sync
 ```
 
-This installs two equivalent commands: `ccprofiles` (full) and `clp` (short). Use whichever you like.
+This installs two equivalent commands: `clp` (short) and `ccprofiles` (full). The docs below use `clp`.
 
 <details><summary>Install from source instead</summary>
 
@@ -37,26 +38,28 @@ cd packages/cli && npm link
 ## Quickstart
 
 ```bash
-ccprofiles adopt --yes          # REQUIRED FIRST: scan ~/.claude* and build the manifest
-ccprofiles list                 # see all your profiles
-ccprofiles doctor               # find broken links & plaintext keys
-ccprofiles secrets migrate      # move API keys from .zshrc into the OS keychain
+clp adopt --yes          # REQUIRED FIRST: scan ~/.claude* and build the manifest
+clp list                 # see all your profiles
+clp doctor               # find broken links & plaintext keys
+clp secrets migrate      # move API keys from .zshrc into the OS keychain
 ```
 
-Everything except `list`, `adopt`, and `doctor` needs the manifest, so `ccprofiles adopt --yes` is always step one — commands will remind you if you skip it.
+Everything except `list`, `adopt`, and `doctor` needs the manifest, so `clp adopt --yes` is always step one — commands will remind you if you skip it.
+
+Prefer a UI? `clp ui` opens the whole thing in your browser (see below).
 
 ### Manage MCP servers
 
 ```bash
-ccprofiles mcp list                                   # server × profile drift matrix
-ccprofiles mcp add shadcn --all --command npx --args "shadcn@latest,mcp"
-ccprofiles mcp sync --from oauth --to office,z        # make profiles match
+clp mcp list                                   # server × profile drift matrix
+clp mcp add shadcn --all --command npx --args "shadcn@latest,mcp"
+clp mcp sync --from oauth --to office,z        # make profiles match
 ```
 
 ### New profile for a new account
 
 ```bash
-ccprofiles create work --from oauth     # dir + launcher fn + copied MCP set
+clp create work --from oauth     # dir + launcher fn + copied MCP set
 # restart shell, then:
 cl-work                          # launches claude with CLAUDE_CONFIG_DIR=~/.claude-work
 ```
@@ -65,13 +68,13 @@ cl-work                          # launches claude with CLAUDE_CONFIG_DIR=~/.cla
 
 ```bash
 # machine A (source of truth)
-ccprofiles serve --allow-secrets
+clp serve --allow-secrets
 # → ccprofiles sync server on port 51234
 # → pairing PIN: 123456
 
 # machine B
-ccprofiles pair 192.168.1.10 --port 51234 --pin 123456 --name mac
-ccprofiles sync --from mac --with-secrets
+clp pair 192.168.1.10 --port 51234 --pin 123456 --name mac
+clp sync --from mac --with-secrets
 ```
 
 Manifest, MCP servers, skills, commands, launcher functions, and (opt-in) secrets all arrive — rendered for the local OS: PowerShell profile functions and junctions on Windows, `.zshrc`/`.bashrc` functions and symlinks elsewhere.
@@ -81,21 +84,29 @@ Two things intentionally don't travel:
 - **OAuth sessions** — you still run `/login` once per account on the new machine (Anthropic session state is machine-bound; syncing it would be wrong).
 - The **`default` profile has no `cl-*` launcher** — it's what plain `claude` already launches; only the named profiles get launcher functions.
 
+## Web dashboard
+
+```bash
+clp ui                   # opens http://127.0.0.1:<port>/?t=<token> in your browser
+```
+
+A local panel to manage profiles, MCP servers (interactive drift matrix), secrets (add / reveal / delete / migrate), sync, and doctor — everything the CLI does. It's **localhost-only** and guarded by a per-launch session token plus an Origin check, so nothing off your machine (and no website in your browser) can reach the API. Pass `--no-open` to just print the URL, or `--port <n>` to pin the port.
+
 ## How it works
 
 Three layers of state:
 
-1. **Live state** — your actual `.claude*` dirs and shell rc files. Claude Code owns these; ccprofiles edits only the keys it manages (`mcpServers`, its marked rc block, its links).
+1. **Live state** — your actual `.claude*` dirs and shell rc files. Claude Code owns these; the tool edits only the keys it manages (`mcpServers`, its marked rc block, its links).
 2. **Manifest** — `~/.ccprofiles/manifest.yaml`, a platform-neutral declaration (paths templated as `{home}`, secrets referenced as `secret://name`). Versioned with local git commits; safe to share.
-3. **Secrets store** — per-machine keychain: macOS Keychain, Linux `secret-tool` (libsecret), or an AES-256-GCM encrypted file as fallback (native Windows and headless Linux — set `CCPROFILES_PASSPHRASE` in your environment for it). Values never appear in the manifest, bundles, or rc files; launchers resolve them at run time via `ccprofiles secrets get`.
+3. **Secrets store** — per-machine keychain: macOS Keychain, Linux `secret-tool` (libsecret), or an AES-256-GCM encrypted file as fallback (native Windows and headless Linux — set `CCPROFILES_PASSPHRASE` in your environment for it). Values never appear in the manifest, bundles, or rc files; launcher functions resolve them at run time by calling the CLI.
 
-> ⚠️ `ccprofiles secrets set <name> <value>` takes the value as an argument, which lands in your shell history — prefer `ccprofiles secrets migrate` (reads from rc files) or clear history after. Interactive prompting is on the roadmap.
+> ⚠️ `clp secrets set <name> <value>` takes the value as an argument, which lands in your shell history — prefer `clp secrets migrate` (reads from rc files) or clear history after. Interactive prompting is on the roadmap.
 
-`ccprofiles status` shows drift between manifest and live; `ccprofiles apply` reconciles (with backups under `~/.ccprofiles/backups/`); `ccprofiles snapshot` goes the other way (live → manifest).
+`clp status` shows drift between manifest and live; `clp apply` reconciles (with backups under `~/.ccprofiles/backups/`); `clp snapshot` goes the other way (live → manifest).
 
 ### Sync security model
 
-Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN shown on the serving device (HMAC confirmation both ways — a MITM on your network cannot complete pairing without the PIN, and the client verifies the server too). All subsequent payloads are AES-256-GCM encrypted with the pairing key. Secrets transfer additionally requires the server to opt in with `--allow-secrets`, and values go straight into the receiving machine's keychain.
+Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN shown on the serving device (HMAC confirmation both ways — a MITM on your network cannot complete pairing without the PIN, and the client verifies the server too). All subsequent payloads are AES-256-GCM encrypted with the pairing key. Secrets transfer additionally requires the server to opt in with `--allow-secrets`, and values go straight into the receiving machine's keychain. Pairing locks after 5 wrong PINs.
 
 ## Commands
 
@@ -107,6 +118,7 @@ Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN sh
 | Manifest | `status` · `apply` · `snapshot` |
 | Sync | `serve [--allow-secrets]` · `pair <host> --port n --pin p` · `devices` · `sync --from dev [--with-secrets]` |
 | Bundle | `export <file>` · `import <file>` |
+| Dashboard | `ui [--port n] [--no-open]` |
 
 All mutating commands support `--dry-run`. Every mutation backs up the files it touches to `~/.ccprofiles/backups/<timestamp>/` first.
 
@@ -114,33 +126,33 @@ All mutating commands support `--dry-run`. Every mutation backs up the files it 
 
 | Symptom | Fix |
 |---|---|
-| `error: no manifest yet` | Run `ccprofiles adopt --yes` first — it builds the manifest from your existing profiles |
-| `zsh: command not found: ccp` | Not linked/installed — see Install; if just linked, run `rehash` |
-| ``cannot reach <host> — is `ccprofiles serve` running?`` | Start `ccprofiles serve` on the other device; check you're on the same network and the port matches |
+| `error: no manifest yet` | Run `clp adopt --yes` first — it builds the manifest from your existing profiles |
+| `zsh: command not found: clp` | Not linked/installed — see Install; if just linked, run `rehash` |
+| ``cannot reach <host> — is `ccprofiles serve` running?`` | Start `clp serve` on the other device; check you're on the same network and the port matches |
 | `encrypted-file backend requires a passphrase` | Set `CCPROFILES_PASSPHRASE` (Windows / Linux without libsecret) |
 | Profile shows account `-` after sync | Expected — run `/login` inside that profile once; OAuth sessions don't sync |
 | Something went wrong after `apply` | Restore from `~/.ccprofiles/backups/<latest>/` |
 
 ## Roadmap
 
-- Web dashboard on top of `ccprofiles-core`
-- mDNS auto-discovery for `ccprofiles devices`
+- mDNS auto-discovery for `clp devices`
+- Pair devices from the dashboard (currently CLI-only)
 - Windows Credential Manager (DPAPI) secrets backend
 - Interactive prompts (`secrets set` without echoing, `adopt` confirmation)
 
 ## Development
 
-npm-workspaces monorepo: `packages/core` (library) + `packages/cli` (commander wrapper).
+npm-workspaces monorepo: `packages/core` (library) + `packages/cli` (commander wrapper) + `packages/ui` (dashboard). The published CLI is [`claude-account-sync`](https://www.npmjs.com/package/claude-account-sync); the library is [`ccprofiles-core`](https://www.npmjs.com/package/ccprofiles-core).
 
 ```bash
 npm install
 npm test        # vitest — unit + e2e (incl. an in-process two-machine sync test)
-npm run build
+npm run build   # builds core + cli + the dashboard, bundled into the CLI
 ```
 
 ## Related projects
 
-Not to be confused with [samhvw8/claude-code-profile](https://github.com/samhvw8/claude-code-profile) (the `ccp` command) — a great tool for a **different** job: a central hub of reusable skills/agents/hooks/commands, with profiles for different *workflows*. It explicitly does **not** handle MCP servers, secrets, LAN sync, or multiple *accounts* — which are exactly this tool's focus. The two are complementary; this one deliberately uses the `ccprofiles`/`clp` commands to avoid clashing with its `ccp`.
+Not to be confused with [samhvw8/claude-code-profile](https://github.com/samhvw8/claude-code-profile) (the `ccp` command) — a great tool for a **different** job: a central hub of reusable skills/agents/hooks/commands, with profiles for different *workflows*. It explicitly does **not** handle MCP servers, secrets, LAN sync, or multiple *accounts* — which are exactly this tool's focus. The two are complementary; this one deliberately uses the `clp` / `ccprofiles` commands to avoid clashing with its `ccp`.
 
 ## License
 
