@@ -1,15 +1,16 @@
 import type { Command } from 'commander'
 import {
-  discoverProfiles, buildManifest, saveManifest, planApply, executeApply,
+  discoverProfiles, buildManifest, saveManifest, executeApply,
 } from 'ccprofiles-core'
 import { requireManifest, type CliContext } from '../context.js'
+import { planActions } from '../plan.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
 export function registerManifestCommands(program: Command, ctx: CliContext): void {
   program.command('status').description('show live-vs-manifest drift').action(async () => {
     const m = await requireManifest(ctx)
-    const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
+    const actions = await planActions(ctx, m)
     if (actions.length === 0) { console.log('in sync'); return }
     const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: true })
     for (const line of res.performed) console.log(`pending: ${line}`)
@@ -19,7 +20,7 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
     .option('--dry-run')
     .action(async (opts: { dryRun?: boolean }) => {
       const m = await requireManifest(ctx)
-      const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
+      const actions = await planActions(ctx, m)
       if (actions.length === 0) { console.log('in sync — nothing to do'); return }
       const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!opts.dryRun })
       for (const line of res.performed) console.log(`${opts.dryRun ? '[dry-run] ' : ''}${line}`)
@@ -50,7 +51,7 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
         settingsEnv: {},
       })
       await saveManifest(ctx.manifestRoot, m)
-      const actions = planApply(m, await discoverProfiles(ctx.home), ctx.platform)
+      const actions = await planActions(ctx, m)
       await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp() })
       console.log(`profile "${name}" created — launcher: cl-${name} (restart your shell)`)
     })

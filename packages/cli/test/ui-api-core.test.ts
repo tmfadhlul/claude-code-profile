@@ -89,4 +89,29 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     expect(res._status).toBe(400)
     expect(res._json.error).toMatch(/hub/)
   })
+  it('PATCH settingsEnv with a secret ref applies resolved value into settings.json, preserving other keys', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ model: 'opus' }))
+    await callApi(ctx, 'PUT', '/api/secrets/z-token', { value: 'tok-abc' })
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', {
+      settingsEnv: { ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic', ANTHROPIC_AUTH_TOKEN: 'secret://z-token' },
+    })
+    expect(res._status).toBe(200)
+    const s = JSON.parse(await readFile(join(home, '.claude', 'settings.json'), 'utf8'))
+    expect(s.model).toBe('opus')
+    expect(s.env).toEqual({ ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic', ANTHROPIC_AUTH_TOKEN: 'tok-abc' })
+    const row = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'default')
+    expect(row.settingsEnv.ANTHROPIC_AUTH_TOKEN).toBe('secret://z-token') // manifest keeps the ref, not the value
+  })
+  it('PATCH settingsEnv with missing secret 400s and does not write settings.json', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { settingsEnv: { T: 'secret://ghost' } })
+    expect(res._status).toBe(400)
+    expect(res._json.error).toMatch(/secret not found: ghost/)
+  })
+  it('PATCH settingsEnv rejects non-string values', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { settingsEnv: { N: 42 } })
+    expect(res._status).toBe(400)
+  })
 })
