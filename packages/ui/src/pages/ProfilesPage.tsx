@@ -70,8 +70,12 @@ export function ProfilesPage() {
               <TableCell className="font-mono text-xs text-muted-foreground">{Object.keys(r.env).length || '—'}</TableCell>
               <TableCell>
                 <div className="flex gap-1 justify-end">
-                  <Button size="sm" variant="ghost" disabled={!r.adopted} title={r.adopted ? undefined : 'Adopt first'} onClick={() => setEditing(r)}>Edit</Button>
-                  <Button size="sm" variant="ghost" disabled={!r.adopted} title={r.adopted ? undefined : 'Adopt first'} onClick={() => setDeleting(r)}>Delete</Button>
+                  <span title={r.adopted ? undefined : 'Adopt first'}>
+                    <Button size="sm" variant="ghost" disabled={!r.adopted} onClick={() => setEditing(r)}>Edit</Button>
+                  </span>
+                  <span title={r.adopted ? undefined : 'Adopt first'}>
+                    <Button size="sm" variant="ghost" disabled={!r.adopted} onClick={() => setDeleting(r)}>Delete</Button>
+                  </span>
                 </div>
               </TableCell>
             </TableRow>

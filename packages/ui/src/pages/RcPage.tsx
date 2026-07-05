@@ -23,9 +23,14 @@ function Block({ title, lines, otherLines, tint }: { title: string; lines: strin
 export function RcPage() {
   const [rc, setRc] = useState<Rc | null>(null)
   const [busy, setBusy] = useState(false)
-  const load = async () => { try { setRc(await api.rc()) } catch (e: any) { toast.error(e.message) } }
+  const [error, setError] = useState<string | null>(null)
+  const load = async () => {
+    try { setRc(await api.rc()); setError(null) }
+    catch (e: any) { setError(e.message); toast.error(e.message) }
+  }
   useEffect(() => { load() }, [])
 
+  if (error) return <div className="text-sm text-muted-foreground">No manifest yet — adopt your profiles first.</div>
   if (!rc) return <div className="text-sm text-muted-foreground">Loading…</div>
 
   const curLines = (rc.current ?? '').split('\n')

@@ -67,6 +67,18 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     await callApi(ctx, 'POST', '/api/adopt')
     expect((await callApi(ctx, 'DELETE', '/api/profiles/nope'))._status).toBe(404)
   })
+  it('PATCH with an unsafe launcher 400s and does not corrupt the manifest', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { launcher: 'x(){ :;};evil' })
+    expect(res._status).toBe(400)
+    const after = await callApi(ctx, 'GET', '/api/profiles')
+    expect(after._status).toBe(200)
+  })
+  it('PATCH with an empty secret ref 400s', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { env: { FOO: 'secret://' } })
+    expect(res._status).toBe(400)
+  })
   it('DELETE the hub profile is rejected', async () => {
     await callApi(ctx, 'POST', '/api/adopt')
     const mp = join(ctx.manifestRoot, 'manifest.yaml')
