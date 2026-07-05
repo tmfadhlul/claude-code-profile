@@ -4,6 +4,7 @@ import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from '
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import type { CliContext } from '../context.js'
+import { KEY_VARS } from './secrets.js'
 
 export function registerProfileCommands(program: Command, ctx: CliContext): void {
   program.command('list').description('list Claude Code profiles').action(async () => {
@@ -35,24 +36,29 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
   program.command('doctor').description('check setup health').action(async () => {
     const problems: string[] = []
     const live = await discoverProfiles(ctx.home)
-    for (const lp of live)
+    let m: Awaited<ReturnType<typeof loadManifest>> | null = null
+    if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) m = await loadManifest(ctx.manifestRoot)
+    for (const lp of live) {
       for (const name of readdirSync(lp.dir)) {
         const f = join(lp.dir, name)
         try {
           if (lstatSync(f).isSymbolicLink() && !existsSync(f)) problems.push(`broken symlink: ${f} -> ${readlinkSync(f)}`)
         } catch { /* ignore */ }
       }
+      const pname = lp.dirName === '.claude' ? 'default' : lp.dirName.slice('.claude-'.length)
+      const decl = m?.profiles.find(p => p.name === pname) ?? null
+      for (const varName of KEY_VARS)
+        if (lp.settingsEnv[varName] && !decl?.settingsEnv[varName])
+          problems.push(`plaintext token ${varName} in ${join(lp.dir, 'settings.json')} — adopt profile then run: secrets migrate`)
+    }
     if (existsSync(ctx.platform.rcFile)) {
       const rc = readFileSync(ctx.platform.rcFile, 'utf8')
       const outsideBlock = rc.split('# >>> ccprofiles managed >>>')[0] + (rc.split('# <<< ccprofiles managed <<<')[1] ?? '')
       if (/sk-ant-/.test(outsideBlock)) problems.push(`plaintext Anthropic key found in ${ctx.platform.rcFile} — run: ccprofiles secrets migrate`)
     }
-    if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
-      const m = await loadManifest(ctx.manifestRoot)
-      for (const pr of m.profiles) {
-        const dir = pr.dir.replace('{home}', ctx.home)
-        if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run: ccprofiles apply`)
-      }
+    if (m) for (const pr of m.profiles) {
+      const dir = pr.dir.replace('{home}', ctx.home)
+      if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run: ccprofiles apply`)
     }
     if (problems.length === 0) { console.log('ok: no problems found'); return }
     for (const p of problems) console.log(`warn: ${p}`)
