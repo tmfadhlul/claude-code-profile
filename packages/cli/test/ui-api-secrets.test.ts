@@ -109,4 +109,15 @@ describe('ui api: secrets', () => {
     expect(res._status).toBe(409)
     expect(res._json.error).toMatch(/secret not found/)
   })
+
+  it('GET /api/secrets returns backend "unavailable" instead of 500 when the store cannot open', async () => {
+    // Force the linux code path (CCPROFILES_FORCE_OS is a test-only seam — see context.ts) with no
+    // CCPROFILES_PASSPHRASE: defaultBackend() probes for `secret-tool`, which isn't installed on the
+    // dev/CI box, so it falls through to the encrypted-file backend and throws for lack of a passphrase.
+    const badCtx = makeContext({ CCPROFILES_TEST_HOME: home, SHELL: '/bin/zsh', CCPROFILES_FORCE_OS: 'linux' } as any)
+    const res = await callApi(badCtx, 'GET', '/api/secrets')
+    expect(res._status).toBe(200)
+    expect(res._json.backend).toBe('unavailable')
+    expect(res._json.names).toEqual([])
+  })
 })

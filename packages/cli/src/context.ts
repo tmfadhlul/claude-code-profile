@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { detectPlatform, loadManifest, type Manifest, type Platform } from 'ccprofiles-core'
+import { detectPlatform, loadManifest, type Manifest, type OsKind, type Platform } from 'ccprofiles-core'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerProfileCommands } from './commands/profiles.js'
@@ -22,7 +22,13 @@ export interface CliContext {
 
 export function makeContext(env: NodeJS.ProcessEnv = process.env): CliContext {
   const testHome = env.CCPROFILES_TEST_HOME
-  const platform = detectPlatform(testHome ? { home: testHome, shell: env.SHELL } : {})
+  // CCPROFILES_FORCE_OS is a test-only seam for simulating other platforms' secrets-backend
+  // selection from a single dev machine — never set this outside tests.
+  const forcedOs = env.CCPROFILES_FORCE_OS as OsKind | undefined
+  const platform = detectPlatform({
+    ...(testHome ? { home: testHome, shell: env.SHELL } : {}),
+    ...(forcedOs ? { osKind: forcedOs } : {}),
+  })
   const manifestRoot = env.CCPROFILES_HOME ?? join(platform.home, '.ccprofiles')
   return {
     home: platform.home,

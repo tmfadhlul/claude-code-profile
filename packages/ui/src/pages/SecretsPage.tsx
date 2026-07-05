@@ -86,34 +86,44 @@ export function SecretsPage() {
           </Dialog>
         </div>
       </div>
-      <div className="divide-y border rounded-lg">
-        {names.map(n => {
-          const used = usage(n)
-          return (
-            <div key={n} className="flex items-center justify-between p-3 gap-3">
-              <div className="min-w-0">
-                <div className="font-mono text-sm">{n}{shown[n] !== undefined && <span className="ml-3 text-muted-foreground">{shown[n]}</span>}</div>
-                {used.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {used.map(u => (
-                      <Badge key={`${u.profile}-${u.map}-${u.envKey}`} variant="secondary" className="font-mono text-[11px] gap-1">
-                        {u.profile} · {u.envKey}{u.map === 'settingsEnv' && <span className="text-muted-foreground"> (settings)</span>}
-                        <button className="ml-0.5 hover:text-foreground" title="Detach" onClick={() => detach(n, u)}>×</button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+      {backend === 'unavailable' ? (
+        <div className="border rounded-lg p-4 text-sm space-y-1">
+          <div className="font-medium">Secrets backend not configured</div>
+          <p className="text-muted-foreground">
+            On Windows this uses DPAPI automatically (needs PowerShell). Otherwise set
+            <span className="font-mono"> CCPROFILES_PASSPHRASE</span> in your environment to enable the encrypted-file backend, then reopen this page.
+          </p>
+        </div>
+      ) : (
+        <div className="divide-y border rounded-lg">
+          {names.map(n => {
+            const used = usage(n)
+            return (
+              <div key={n} className="flex items-center justify-between p-3 gap-3">
+                <div className="min-w-0">
+                  <div className="font-mono text-sm">{n}{shown[n] !== undefined && <span className="ml-3 text-muted-foreground">{shown[n]}</span>}</div>
+                  {used.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {used.map(u => (
+                        <Badge key={`${u.profile}-${u.map}-${u.envKey}`} variant="secondary" className="font-mono text-[11px] gap-1">
+                          {u.profile} · {u.envKey}{u.map === 'settingsEnv' && <span className="text-muted-foreground"> (settings)</span>}
+                          <button className="ml-0.5 hover:text-foreground" title="Detach" onClick={() => detach(n, u)}>×</button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" onClick={() => setAttaching(n)}>Attach</Button>
+                  <Button size="sm" variant="ghost" onClick={() => reveal(n)}>{shown[n] !== undefined ? 'Hide' : 'Reveal'}</Button>
+                  <Button size="sm" variant="ghost" onClick={async () => { try { await api.rmSecret(n); toast.success(`Removed ${n}`); load() } catch (e: any) { toast.error(e.message) } }}>Delete</Button>
+                </div>
               </div>
-              <div className="flex gap-1 shrink-0">
-                <Button size="sm" variant="ghost" onClick={() => setAttaching(n)}>Attach</Button>
-                <Button size="sm" variant="ghost" onClick={() => reveal(n)}>{shown[n] !== undefined ? 'Hide' : 'Reveal'}</Button>
-                <Button size="sm" variant="ghost" onClick={async () => { try { await api.rmSecret(n); toast.success(`Removed ${n}`); load() } catch (e: any) { toast.error(e.message) } }}>Delete</Button>
-              </div>
-            </div>
-          )
-        })}
-        {names.length === 0 && <div className="p-3 text-sm text-muted-foreground">No secrets yet.</div>}
-      </div>
+            )
+          })}
+          {names.length === 0 && <div className="p-3 text-sm text-muted-foreground">No secrets yet.</div>}
+        </div>
+      )}
 
       {attaching && (
         <Dialog open onOpenChange={o => { if (!o) setAttaching(null) }}>
