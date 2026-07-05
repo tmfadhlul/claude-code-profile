@@ -86,4 +86,34 @@ mcpServers: {}
       expect(m.profiles[0].settingsEnv.FOO).toContain('$dollar')
     })
   })
+
+  describe('remote mcp servers', () => {
+    const withServers = (servers: string) => `
+version: 1
+hub: null
+profiles: []
+mcpServers:
+${servers}
+`
+    it('accepts a remote server with url and no command', () => {
+      const m = parseManifest(withServers(`  clickup:\n    type: http\n    url: "https://mcp.clickup.com/x"`))
+      expect(m.mcpServers.clickup.url).toBe('https://mcp.clickup.com/x')
+      expect(m.mcpServers.clickup.command).toBeUndefined()
+    })
+    it('still accepts a local server with command', () => {
+      const m = parseManifest(withServers(`  fs:\n    command: npx\n    args: ["-y", "server-fs"]`))
+      expect(m.mcpServers.fs.command).toBe('npx')
+    })
+    it('rejects a server with neither command nor url', () => {
+      expect(() => parseManifest(withServers(`  bad:\n    type: http`))).toThrow(/either "command".*or "url"/)
+    })
+
+    it('saveManifest round-trips a remote-server manifest', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'ccp-savemcp-'))
+      const m = parseManifest(withServers(`  clickup:\n    type: http\n    url: "https://mcp.clickup.com/x"`))
+      await saveManifest(root, m)
+      const reloaded = await loadManifest(root)
+      expect(reloaded.mcpServers.clickup.url).toBe('https://mcp.clickup.com/x')
+    })
+  })
 })
