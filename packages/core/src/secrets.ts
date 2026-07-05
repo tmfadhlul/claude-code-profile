@@ -92,6 +92,61 @@ export class SecretToolBackend implements SecretsBackend {
   }
 }
 
+export type DpapiCrypt = { protect(plain: string): Promise<string>; unprotect(b64: string): Promise<string> }
+
+// DPAPI via built-in PowerShell. Secret bytes travel through a spawn env var, never argv.
+export const powershellDpapi: DpapiCrypt = {
+  protect: (plain) => runDpapi(
+    "$b=[Text.Encoding]::UTF8.GetBytes($env:CCP_IN);" +
+    "[Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect($b,$null,'CurrentUser'))",
+    plain),
+  unprotect: (b64) => runDpapi(
+    "$b=[Convert]::FromBase64String($env:CCP_IN);" +
+    "[Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect($b,$null,'CurrentUser'))",
+    b64),
+}
+
+async function runDpapi(script: string, input: string): Promise<string> {
+  const child = await import('node:child_process')
+  return new Promise<string>((resolve, reject) => {
+    const proc = child.spawn(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Security;' + script],
+      { env: { ...process.env, CCP_IN: input }, stdio: ['ignore', 'pipe', 'ignore'] },
+    )
+    let out = ''
+    proc.stdout.on('data', d => { out += d })
+    proc.on('error', reject)
+    proc.on('close', code => (code === 0 ? resolve(out.trim()) : reject(new Error(`powershell dpapi exited ${code}`))))
+  })
+}
+
+type DpapiFile = { entries: Record<string, string> } // key -> DPAPI ciphertext (base64)
+
+export class DpapiBackend implements SecretsBackend {
+  readonly name = 'windows-dpapi'
+  constructor(private filePath: string, private crypt: DpapiCrypt = powershellDpapi) {}
+  private async load(): Promise<DpapiFile> {
+    if (!existsSync(this.filePath)) return { entries: {} }
+    return JSON.parse(await readFile(this.filePath, 'utf8'))
+  }
+  async get(key: string): Promise<string | null> {
+    const f = await this.load()
+    const ct = f.entries[key]
+    return ct === undefined ? null : this.crypt.unprotect(ct)
+  }
+  async set(key: string, value: string): Promise<void> {
+    const f = await this.load()
+    f.entries[key] = await this.crypt.protect(value)
+    await atomicWrite(this.filePath, JSON.stringify(f))
+  }
+  async delete(key: string): Promise<void> {
+    const f = await this.load()
+    delete f.entries[key]
+    await atomicWrite(this.filePath, JSON.stringify(f))
+  }
+}
+
 export class SecretsStore {
   constructor(private backend: SecretsBackend, private indexPath: string) {}
   private async readIndex(): Promise<string[]> {
@@ -122,6 +177,7 @@ export async function defaultBackend(
   if (p.os === 'linux') {
     try { await realExec('secret-tool', ['--help']); return new SecretToolBackend() } catch { /* fall through */ }
   }
+  if (p.os === 'win32') return new DpapiBackend(opts.filePath.replace(/\.enc$/, '.dpapi.json'))
   const pw = opts.passphrase ? await opts.passphrase() : ''
   if (!pw) throw new Error('encrypted-file backend requires a passphrase')
   return new FileBackend(opts.filePath, pw)
