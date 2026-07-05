@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile, readlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { planApply, executeApply } from '../src/apply.js'
+import { planApply, executeApply, resolveSettingsEnv } from '../src/apply.js'
 import { discoverProfiles } from '../src/discovery.js'
 import { detectPlatform } from '../src/platform.js'
 import type { Manifest } from '../src/manifest.js'
@@ -19,9 +19,9 @@ function manifest(): Manifest {
   return {
     version: 1, hub: 'default',
     profiles: [
-      { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {},
+      { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {},
         links: {}, mcp: ['playwright'] },
-      { name: 'new', dir: '{home}/.claude-new', launcher: 'cl-new', auth: 'env', env: {},
+      { name: 'new', dir: '{home}/.claude-new', launcher: 'cl-new', auth: 'env', env: {}, settingsEnv: {},
         links: { skills: 'hub' }, mcp: ['playwright'] },
     ],
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
@@ -64,5 +64,60 @@ describe('planApply + executeApply', () => {
     await executeApply(planApply(manifest(), await discoverProfiles(home), p),
       { backupRoot: join(home, 'b'), stamp: 't3' })
     expect(planApply(manifest(), await discoverProfiles(home), p)).toEqual([])
+  })
+})
+
+describe('settingsEnv apply', () => {
+  const platformFor = (home: string) => detectPlatform({ home, shell: '/bin/zsh' })
+  const manifestWith = (settingsEnv: Record<string, string>): Manifest => ({
+    version: 1, hub: null, mcpServers: {},
+    profiles: [{ name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv }],
+  })
+
+  it('resolveSettingsEnv resolves secret refs and passes plain values', async () => {
+    const m = manifestWith({ ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic', ANTHROPIC_AUTH_TOKEN: 'secret://z-token' })
+    const r = await resolveSettingsEnv(m, async n => (n === 'z-token' ? 'tok-123' : null))
+    expect(r.z).toEqual({ ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic', ANTHROPIC_AUTH_TOKEN: 'tok-123' })
+  })
+  it('resolveSettingsEnv throws on missing secret with exact message', async () => {
+    const m = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'secret://nope' })
+    await expect(resolveSettingsEnv(m, async () => null))
+      .rejects.toThrow('profile "z": secret not found: nope (for ANTHROPIC_AUTH_TOKEN)')
+  })
+  it('plans and executes set-settings-env, preserving other settings.json keys', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-apply-senv-'))
+    const p = platformFor(home)
+    const dir = join(home, '.claude-z')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, '.claude.json'), '{}')
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ model: 'opus', env: { OLD: '1' } }))
+    const m = manifestWith({ ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' })
+    const live = await discoverProfiles(home)
+    const resolved = await resolveSettingsEnv(m, async () => null)
+    const actions = planApply(m, live, p, resolved)
+    expect(actions.some(a => a.kind === 'set-settings-env')).toBe(true)
+    await executeApply(actions, { backupRoot: join(home, 'bk'), stamp: 's1' })
+    const s = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8'))
+    expect(s.model).toBe('opus')
+    expect(s.env).toEqual({ ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' })
+    // idempotent: re-plan sees no drift
+    const again = planApply(m, await discoverProfiles(home), p, resolved)
+    expect(again.filter(a => a.kind === 'set-settings-env')).toEqual([])
+  })
+  it('empty settingsEnv never touches settings.json', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-apply-senv2-'))
+    const p = platformFor(home)
+    const dir = join(home, '.claude-z')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, '.claude.json'), '{}')
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ env: { HAND: 'edited' } }))
+    const m = manifestWith({})
+    const actions = planApply(m, await discoverProfiles(home), p)
+    expect(actions.filter(a => a.kind === 'set-settings-env')).toEqual([])
+  })
+  it('planApply without resolved map throws if secret refs present', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-apply-senv3-'))
+    const m = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'secret://z-token' })
+    expect(() => planApply(m, [], platformFor(home))).toThrow(/pass resolved settings env/)
   })
 })
