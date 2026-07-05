@@ -282,7 +282,9 @@ export function buildRoutes(ctx: CliContext): Route[] {
 
   // ── secrets ─────────────────────────────────────────────────────────────────
   add('GET', /^\/api\/secrets$/, async (_m, _req, res) => {
-    const store = await secretsStore(ctx)
+    let store
+    try { store = await secretsStore(ctx) }
+    catch (e) { return sendJson(res, 200, { names: [], backend: 'unavailable', error: (e as Error).message }) }
     sendJson(res, 200, { names: await store.list(), backend: store.backendName })
   })
   add('GET', /^\/api\/secrets\/([^/]+)$/, async (mtch, _req, res) => {
