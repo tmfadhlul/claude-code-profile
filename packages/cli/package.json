@@ -1,6 +1,6 @@
 {
   "name": "claude-account-sync",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Manage multiple Claude Code accounts/profiles — MCP drift sync, keychain secrets, and encrypted LAN replication between machines. CLI: ccprofiles (alias clp).",
   "type": "module",
   "bin": {
@@ -34,7 +34,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "ccprofiles-core": "^0.2.0",
+    "ccprofiles-core": "^0.3.0",
     "commander": "^12.1.0"
   }
 }
