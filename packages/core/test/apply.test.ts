@@ -20,9 +20,9 @@ function manifest(): Manifest {
     version: 1, hub: 'default',
     profiles: [
       { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {},
-        links: {}, mcp: ['playwright'] },
+        links: {}, mcp: ['playwright'], skipPermissions: false },
       { name: 'new', dir: '{home}/.claude-new', launcher: 'cl-new', auth: 'env', env: {}, settingsEnv: {},
-        links: { skills: 'hub' }, mcp: ['playwright'] },
+        links: { skills: 'hub' }, mcp: ['playwright'], skipPermissions: false },
     ],
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
   }
@@ -71,7 +71,7 @@ describe('settingsEnv apply', () => {
   const platformFor = (home: string) => detectPlatform({ home, shell: '/bin/zsh' })
   const manifestWith = (settingsEnv: Record<string, string>): Manifest => ({
     version: 1, hub: null, mcpServers: {},
-    profiles: [{ name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv }],
+    profiles: [{ name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv, skipPermissions: false }],
   })
 
   it('resolveSettingsEnv resolves secret refs and passes plain values', async () => {

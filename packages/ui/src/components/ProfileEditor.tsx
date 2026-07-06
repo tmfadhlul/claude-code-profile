@@ -86,7 +86,7 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
       for (const r of links) if (r.key.trim()) linksObj[r.key.trim()] = r.value
       await api.patchProfile(profile.name, {
         env: fromEnvRows(env), settingsEnv: mergeProviderEnv(pform, fromEnvRows(padv)), links: linksObj, launcher: launcher.trim() || null,
-        skipPermissions,
+        skipPermissions: launcher.trim() ? skipPermissions : false,
       })
       for (const s of mcp.filter(s => !profile.mcpNames.includes(s))) await api.addMcp({ name: s, targets: [profile.name] })
       for (const s of profile.mcpNames.filter(s => !mcp.includes(s))) await api.rmMcp(s, [profile.name])
