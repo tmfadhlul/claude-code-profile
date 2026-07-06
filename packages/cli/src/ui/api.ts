@@ -85,6 +85,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
         adopted: !!decl,
         env: decl?.env ?? {}, links: decl?.links ?? {}, mcpNames: decl?.mcp ?? [],
         settingsEnv: decl?.settingsEnv ?? {}, liveSettingsEnv: lp.settingsEnv,
+        skipPermissions: decl?.skipPermissions ?? false,
       }
     })
     sendJson(res, 200, rows)
@@ -115,7 +116,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     const name = decodeURIComponent(mtch[1])
     const pr = m.profiles.find(p => p.name === name)
     if (!pr) throw new HttpError(404, `unknown profile: ${name}`)
-    const body = await readJson<{ env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null; settingsEnv?: Record<string, string> }>(req)
+    const body = await readJson<{ env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null; settingsEnv?: Record<string, string>; skipPermissions?: boolean }>(req)
     if (body.env) {
       if (!Object.values(body.env).every(v => typeof v === 'string')) throw new HttpError(400, 'env values must be strings')
       pr.env = body.env
@@ -128,6 +129,10 @@ export function buildRoutes(ctx: CliContext): Route[] {
     if (body.settingsEnv) {
       for (const v of Object.values(body.settingsEnv)) if (typeof v !== 'string') throw new HttpError(400, 'settingsEnv values must be strings')
       pr.settingsEnv = body.settingsEnv
+    }
+    if (body.skipPermissions !== undefined) {
+      if (typeof body.skipPermissions !== 'boolean') throw new HttpError(400, 'skipPermissions must be a boolean')
+      pr.skipPermissions = body.skipPermissions
     }
     assertSafe(m)
     try { await planActionsPreflight(ctx, m) } catch (e) { throw new HttpError(400, (e as Error).message) }
