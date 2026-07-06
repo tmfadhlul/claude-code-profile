@@ -58,6 +58,8 @@ clp mcp add shadcn --all --command npx --args "shadcn@latest,mcp"
 clp mcp sync --from oauth --to office,z        # make profiles match
 ```
 
+> **Scope:** `clp` manages **user-scope** MCP servers only (the top-level `mcpServers` in `~/.claude.json`). Local/project-scoped servers — added with `claude mcp add` at its default scope, stored under `projects[...]` or in a project `.mcp.json` — are intentionally left untouched (they're tied to a working directory). If a server isn't showing up in `clp mcp list`, re-add it at user scope: `claude mcp add <name> --scope user -- <command>`, then `clp adopt --yes`.
+
 ### New profile for a new account
 
 ```bash
