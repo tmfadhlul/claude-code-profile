@@ -7,6 +7,8 @@ Run Claude Code with several accounts — personal subscription, work OAuth, API
 The `clp` command (also available as `ccprofiles`) fixes that:
 
 - 🔎 **Adopt** your existing `.claude*` directories into a declarative manifest — zero manual config
+- 🎛️ **Set up profiles the easy way** — a guided web form to create, edit, and delete profiles: launcher, env, links, MCP, and provider — no hand-editing config files
+- 🌐 **Custom LLM providers per profile** — point a profile at z.ai (GLM), mimo, OpenRouter, or any Anthropic-compatible endpoint with a preset picker; base URL + token + model mappings managed for you, token kept in the keychain
 - 🧩 **Manage MCP servers** across profiles: drift matrix, add/remove everywhere at once, sync one profile's set to others
 - 🔐 **Secrets out of your rc files** — macOS Keychain / libsecret / encrypted file, with `clp secrets migrate` to clean up existing plaintext keys
 - 🖥️ **Replicate to another machine over LAN** — PIN pairing, end-to-end encrypted, no cloud, works macOS ↔ Windows ↔ Linux ↔ WSL
@@ -64,6 +66,47 @@ clp create work --from oauth     # dir + launcher fn + copied MCP set
 cl-work                          # launches claude with CLAUDE_CONFIG_DIR=~/.claude-work
 ```
 
+`clp apply` writes a launcher function per profile into your shell startup file — `.zshrc`/`.bashrc` on macOS/Linux, your **PowerShell profile** on Windows. After applying, reload the shell (or open a new terminal) and the `cl-*` commands are available directly.
+
+### Using the launchers on Windows (PowerShell)
+
+On Windows the launchers are **PowerShell functions**, written to the PowerShell 7 profile:
+
+```
+%USERPROFILE%\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+```
+
+After `clp apply`, reload with `. $PROFILE` (or open a new tab), then run `cl-work` directly. Three things to get right:
+
+- **Use PowerShell 7 (`pwsh`), not Windows PowerShell 5.1.** clp writes to the `Documents\PowerShell\` profile (PS7). The old built-in "Windows PowerShell" (5.1, `powershell.exe`) reads a *different* file (`Documents\WindowsPowerShell\`) and won't see the functions. Install PS7 with `winget install --id Microsoft.PowerShell` and make it your default: Windows Terminal → Settings → Startup → Default profile → **PowerShell**. Check with `$PSVersionTable.PSVersion` (want 7.x). *(CMD and Git Bash can't use these — they're PowerShell functions.)*
+- **Allow the profile to run.** If reloading errors with "running scripts is disabled," run once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+- **Watch for OneDrive-redirected Documents.** If your Documents folder syncs to OneDrive, PowerShell's real `$PROFILE` may live under OneDrive. Compare `$PROFILE` in your shell against the path above — if they differ, that's why the launcher isn't found.
+
+### Point a profile at a custom LLM provider
+
+Run a profile against z.ai (GLM), mimo, OpenRouter, or any Anthropic-compatible
+endpoint — Claude Code reads the provider config from that profile's `settings.json`,
+and `clp` manages it for you. The easiest path is the **web dashboard**: open a profile
+→ **Edit → Provider**, pick a preset (or *Custom*), fill in the base URL, choose a
+keychain secret for the auth token, and optionally map the opus/sonnet/haiku model
+names. You can also **copy provider settings from another profile** in one click.
+
+Already configured a provider by hand in `settings.json`? `clp adopt` imports it, and
+`clp secrets migrate` moves the plaintext token into your keychain (the manifest then
+references it as `secret://…`, resolved at apply time):
+
+```bash
+clp adopt --yes          # imports each profile's settings.json env, incl. provider config
+clp secrets migrate      # moves ANTHROPIC_AUTH_TOKEN / API_KEY into the keychain
+clp doctor               # flags any provider token still sitting in plaintext
+```
+
+Under the hood this is a generic per-profile env map written into `settings.json`
+(`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_DEFAULT_*_MODEL`, …), so
+anything Claude Code supports works — the form just gives the common keys friendly
+labels and a preset for the base URL. It travels with sync and bundles like everything
+else, token included (via the encrypted secrets channel).
+
 ### Replicate to a second machine
 
 ```bash
@@ -90,13 +133,19 @@ Two things intentionally don't travel:
 clp ui                   # opens http://127.0.0.1:<port>/?t=<token> in your browser
 ```
 
-A local panel to manage profiles, MCP servers (interactive drift matrix), secrets (add / reveal / delete / migrate), sync, and doctor — everything the CLI does. It's **localhost-only** and guarded by a per-launch session token plus an Origin check, so nothing off your machine (and no website in your browser) can reach the API. Pass `--no-open` to just print the URL, or `--port <n>` to pin the port.
+A local panel to manage everything the CLI does — and the easiest way to set profiles up:
+
+- **Profiles** — create, edit, and delete profiles from a form: launcher function, environment variables, links, MCP toggles, and a **guided Provider section** (preset picker for z.ai / mimo / OpenRouter / Anthropic-default / Custom, labeled base-URL / token / model fields, copy-from-another-profile, and an *Advanced* raw editor for any other `settings.json` env var). Deleting a profile is manifest-only — the `~/.claude-*` directory stays on disk.
+- **Shell RC** — preview the managed block in your `.zshrc`/`.bashrc` vs. what the manifest renders, with a one-click update.
+- **MCP servers** (interactive drift matrix), **Secrets** (add / reveal / delete / migrate, plus attach a secret to a profile as an env var), **Sync**, and **Doctor**.
+
+It's **localhost-only** and guarded by a per-launch session token plus an Origin check, so nothing off your machine (and no website in your browser) can reach the API. Pass `--no-open` to just print the URL, or `--port <n>` to pin the port.
 
 ## How it works
 
 Three layers of state:
 
-1. **Live state** — your actual `.claude*` dirs and shell rc files. Claude Code owns these; the tool edits only the keys it manages (`mcpServers`, its marked rc block, its links).
+1. **Live state** — your actual `.claude*` dirs and shell rc files. Claude Code owns these; the tool edits only the keys it manages (`mcpServers` and the `env` block in `settings.json`, its marked rc block, its links).
 2. **Manifest** — `~/.ccprofiles/manifest.yaml`, a platform-neutral declaration (paths templated as `{home}`, secrets referenced as `secret://name`). Versioned with local git commits; safe to share.
 3. **Secrets store** — per-machine keychain: macOS Keychain, Linux `secret-tool` (libsecret), or an AES-256-GCM encrypted file as fallback (native Windows and headless Linux — set `CCPROFILES_PASSPHRASE` in your environment for it). Values never appear in the manifest, bundles, or rc files; launcher functions resolve them at run time by calling the CLI.
 
@@ -112,7 +161,7 @@ Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN sh
 
 | Area | Commands |
 |---|---|
-| Profiles | `list` · `create <name> [--from p]` · `adopt [--yes]` · `doctor` |
+| Profiles | `list` · `create <name> [--from p]` · `adopt [--yes]` · `doctor` (create/edit/delete + provider config: use `clp ui`) |
 | MCP | `mcp list` · `mcp add/rm <name> [--profile p\|--all]` · `mcp sync --from p --to p1,p2\|--all` |
 | Secrets | `secrets set/get/list/rm` · `secrets migrate` |
 | Manifest | `status` · `apply` · `snapshot` |
@@ -129,7 +178,8 @@ All mutating commands support `--dry-run`. Every mutation backs up the files it 
 | `error: no manifest yet` | Run `clp adopt --yes` first — it builds the manifest from your existing profiles |
 | `zsh: command not found: clp` | Not linked/installed — see Install; if just linked, run `rehash` |
 | ``cannot reach <host> — is `ccprofiles serve` running?`` | Start `clp serve` on the other device; check you're on the same network and the port matches |
-| `encrypted-file backend requires a passphrase` | Set `CCPROFILES_PASSPHRASE` (Windows / Linux without libsecret) |
+| `encrypted-file backend requires a passphrase` | On Windows, secrets use DPAPI automatically (needs PowerShell); otherwise set `CCPROFILES_PASSPHRASE` (headless Linux without libsecret) |
+| `cl-*` launcher not found on Windows | Use PowerShell 7 (`pwsh`), not Windows PowerShell 5.1; reload with `. $PROFILE`; if scripts are blocked run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. Confirm `$PROFILE` matches `Documents\PowerShell\Microsoft.PowerShell_profile.ps1` (OneDrive can redirect it) |
 | Profile shows account `-` after sync | Expected — run `/login` inside that profile once; OAuth sessions don't sync |
 | Something went wrong after `apply` | Restore from `~/.ccprofiles/backups/<latest>/` |
 
@@ -137,7 +187,6 @@ All mutating commands support `--dry-run`. Every mutation backs up the files it 
 
 - mDNS auto-discovery for `clp devices`
 - Pair devices from the dashboard (currently CLI-only)
-- Windows Credential Manager (DPAPI) secrets backend
 - Interactive prompts (`secrets set` without echoing, `adopt` confirmation)
 
 ## Development
@@ -149,10 +198,6 @@ npm install
 npm test        # vitest — unit + e2e (incl. an in-process two-machine sync test)
 npm run build   # builds core + cli + the dashboard, bundled into the CLI
 ```
-
-## Related projects
-
-Not to be confused with [samhvw8/claude-code-profile](https://github.com/samhvw8/claude-code-profile) (the `ccp` command) — a great tool for a **different** job: a central hub of reusable skills/agents/hooks/commands, with profiles for different *workflows*. It explicitly does **not** handle MCP servers, secrets, LAN sync, or multiple *accounts* — which are exactly this tool's focus. The two are complementary; this one deliberately uses the `clp` / `ccprofiles` commands to avoid clashing with its `ccp`.
 
 ## License
 
