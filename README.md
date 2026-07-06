@@ -66,6 +66,22 @@ clp create work --from oauth     # dir + launcher fn + copied MCP set
 cl-work                          # launches claude with CLAUDE_CONFIG_DIR=~/.claude-work
 ```
 
+`clp apply` writes a launcher function per profile into your shell startup file — `.zshrc`/`.bashrc` on macOS/Linux, your **PowerShell profile** on Windows. After applying, reload the shell (or open a new terminal) and the `cl-*` commands are available directly.
+
+### Using the launchers on Windows (PowerShell)
+
+On Windows the launchers are **PowerShell functions**, written to the PowerShell 7 profile:
+
+```
+%USERPROFILE%\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+```
+
+After `clp apply`, reload with `. $PROFILE` (or open a new tab), then run `cl-work` directly. Three things to get right:
+
+- **Use PowerShell 7 (`pwsh`), not Windows PowerShell 5.1.** clp writes to the `Documents\PowerShell\` profile (PS7). The old built-in "Windows PowerShell" (5.1, `powershell.exe`) reads a *different* file (`Documents\WindowsPowerShell\`) and won't see the functions. Install PS7 with `winget install --id Microsoft.PowerShell` and make it your default: Windows Terminal → Settings → Startup → Default profile → **PowerShell**. Check with `$PSVersionTable.PSVersion` (want 7.x). *(CMD and Git Bash can't use these — they're PowerShell functions.)*
+- **Allow the profile to run.** If reloading errors with "running scripts is disabled," run once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+- **Watch for OneDrive-redirected Documents.** If your Documents folder syncs to OneDrive, PowerShell's real `$PROFILE` may live under OneDrive. Compare `$PROFILE` in your shell against the path above — if they differ, that's why the launcher isn't found.
+
 ### Point a profile at a custom LLM provider
 
 Run a profile against z.ai (GLM), mimo, OpenRouter, or any Anthropic-compatible
@@ -163,6 +179,7 @@ All mutating commands support `--dry-run`. Every mutation backs up the files it 
 | `zsh: command not found: clp` | Not linked/installed — see Install; if just linked, run `rehash` |
 | ``cannot reach <host> — is `ccprofiles serve` running?`` | Start `clp serve` on the other device; check you're on the same network and the port matches |
 | `encrypted-file backend requires a passphrase` | On Windows, secrets use DPAPI automatically (needs PowerShell); otherwise set `CCPROFILES_PASSPHRASE` (headless Linux without libsecret) |
+| `cl-*` launcher not found on Windows | Use PowerShell 7 (`pwsh`), not Windows PowerShell 5.1; reload with `. $PROFILE`; if scripts are blocked run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. Confirm `$PROFILE` matches `Documents\PowerShell\Microsoft.PowerShell_profile.ps1` (OneDrive can redirect it) |
 | Profile shows account `-` after sync | Expected — run `/login` inside that profile once; OAuth sessions don't sync |
 | Something went wrong after `apply` | Restore from `~/.ccprofiles/backups/<latest>/` |
 
