@@ -114,4 +114,19 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { settingsEnv: { N: 42 } })
     expect(res._status).toBe(400)
   })
+  it('PATCH skipPermissions renders the flag into the launcher and GET returns it', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    await callApi(ctx, 'POST', '/api/profiles', { name: 'work' })   // gets launcher cl-work
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/work', { skipPermissions: true })
+    expect(res._status).toBe(200)
+    const row = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'work')
+    expect(row.skipPermissions).toBe(true)
+    const rc = await readFile(ctx.platform.rcFile, 'utf8')
+    expect(rc).toContain('claude --dangerously-skip-permissions "$@"')
+  })
+  it('PATCH skipPermissions rejects a non-boolean', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { skipPermissions: 'yes' })
+    expect(res._status).toBe(400)
+  })
 })
