@@ -129,4 +129,10 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { skipPermissions: 'yes' })
     expect(res._status).toBe(400)
   })
+  it('skipPermissions is forced off for a launcherless profile (default)', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')  // default profile has no launcher
+    await callApi(ctx, 'PATCH', '/api/profiles/default', { skipPermissions: true })
+    const row = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'default')
+    expect(row.skipPermissions).toBe(false)
+  })
 })
