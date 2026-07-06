@@ -30,7 +30,8 @@ function renderPosix(pr: ProfileDecl, p: Platform): string {
       ? `  export ${k}="$(ccprofiles secrets get ${v.slice(SECRET_PREFIX.length)})"`
       : `  export ${k}="${escapePosix(v)}"`)
   }
-  lines.push(`  CLAUDE_CONFIG_DIR="${profileDirExpr(pr, p)}" claude "$@"`, '}')
+  const flag = pr.skipPermissions ? ' --dangerously-skip-permissions' : ''
+  lines.push(`  CLAUDE_CONFIG_DIR="${profileDirExpr(pr, p)}" claude${flag} "$@"`, '}')
   return lines.join('\n')
 }
 
@@ -41,7 +42,8 @@ function renderPwsh(pr: ProfileDecl, p: Platform): string {
       ? `  $env:${k} = (ccprofiles secrets get ${v.slice(SECRET_PREFIX.length)})`
       : `  $env:${k} = "${escapePwsh(v)}"`)
   }
-  lines.push(`  $env:CLAUDE_CONFIG_DIR = "${profileDirExpr(pr, p)}"`, '  claude @args', '}')
+  const flag = pr.skipPermissions ? ' --dangerously-skip-permissions' : ''
+  lines.push(`  $env:CLAUDE_CONFIG_DIR = "${profileDirExpr(pr, p)}"`, `  claude${flag} @args`, '}')
   return lines.join('\n')
 }
 

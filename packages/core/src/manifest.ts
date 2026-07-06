@@ -28,6 +28,7 @@ const ProfileSchema = z.object({
   links: z.record(z.string()).default({}),
   mcp: z.array(z.string()).default([]),
   settingsEnv: z.record(z.string()).default({}),
+  skipPermissions: z.boolean().default(false),
 })
 
 const ManifestSchema = z.object({
