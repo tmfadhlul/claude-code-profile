@@ -102,6 +102,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       links: src ? { ...src.links } : (m.hub ? { skills: 'hub', commands: 'hub' } : {}),
       mcp: src ? [...src.mcp] : [],
       settingsEnv: {},
+      skipPermissions: false,
     })
     assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)

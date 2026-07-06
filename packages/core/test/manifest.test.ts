@@ -9,7 +9,7 @@ const sample = {
   hub: 'default',
   profiles: [{
     name: 'oauth', dir: '{home}/.claude-oauth', launcher: 'cl-auth',
-    auth: 'oauth' as const, env: {}, links: { skills: 'hub', commands: 'hub' }, mcp: ['playwright'], settingsEnv: {},
+    auth: 'oauth' as const, env: {}, links: { skills: 'hub', commands: 'hub' }, mcp: ['playwright'], settingsEnv: {}, skipPermissions: false,
   }],
   mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
 }
@@ -115,5 +115,37 @@ ${servers}
       const reloaded = await loadManifest(root)
       expect(reloaded.mcpServers.clickup.url).toBe('https://mcp.clickup.com/x')
     })
+  })
+
+  it('skipPermissions parses and defaults to false', () => {
+    const withFlag = parseManifest(`
+version: 1
+hub: null
+profiles:
+  - name: z
+    dir: "{home}/.claude-z"
+    launcher: cl-z
+    auth: env
+    env: {}
+    links: {}
+    mcp: []
+    skipPermissions: true
+mcpServers: {}
+`)
+    expect(withFlag.profiles[0].skipPermissions).toBe(true)
+    const noFlag = parseManifest(`
+version: 1
+hub: null
+profiles:
+  - name: z
+    dir: "{home}/.claude-z"
+    launcher: cl-z
+    auth: env
+    env: {}
+    links: {}
+    mcp: []
+mcpServers: {}
+`)
+    expect(noFlag.profiles[0].skipPermissions).toBe(false)
   })
 })

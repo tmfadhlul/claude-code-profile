@@ -57,6 +57,7 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
         links: src ? { ...src.links } : (m.hub ? { skills: 'hub', commands: 'hub' } : {}),
         mcp: src ? [...src.mcp] : [],
         settingsEnv: {},
+        skipPermissions: false,
       })
       await saveManifest(ctx.manifestRoot, m)
       const actions = await planActions(ctx, m)
