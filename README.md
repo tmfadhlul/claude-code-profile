@@ -107,6 +107,27 @@ anything Claude Code supports works — the form just gives the common keys frie
 labels and a preset for the base URL. It travels with sync and bundles like everything
 else, token included (via the encrypted secrets channel).
 
+### Where secrets are stored (per-OS setup)
+
+`clp` keeps API tokens out of your rc/config files by putting them in the OS credential store, picked automatically:
+
+| OS | Backend | Setup |
+|---|---|---|
+| macOS | Keychain | automatic |
+| Windows | DPAPI (via PowerShell) | automatic |
+| **Linux desktop** | `secret-tool` (libsecret) | `sudo apt install libsecret-tools` (or `dnf install libsecret`) — needs a running keyring daemon (GNOME Keyring / KWallet) |
+| **Linux headless / server** | AES‑256‑GCM encrypted file | set a passphrase (below) — servers have no keyring daemon, so libsecret isn't an option |
+
+**Headless Linux / server (no desktop keyring):** the encrypted-file backend needs a passphrase in the environment. `clp` (and `clp ui`) read it at launch:
+
+```bash
+# add to ~/.bashrc so it persists, then: source ~/.bashrc
+export CCPROFILES_PASSPHRASE='a-long-passphrase-you-will-remember'
+clp ui
+```
+
+Secrets then encrypt to `~/.ccprofiles/secrets.enc`. **The passphrase is the decryption key** — keep it safe and unchanged, or the stored secrets become unreadable. (Prefer a systemd `EnvironmentFile` or your secrets manager over `.bashrc` if the box is shared.) Without a keyring *and* without this passphrase, the Secrets tab and `clp secrets …` will report the backend is unavailable.
+
 ### Replicate to a second machine
 
 ```bash
@@ -178,7 +199,7 @@ All mutating commands support `--dry-run`. Every mutation backs up the files it 
 | `error: no manifest yet` | Run `clp adopt --yes` first — it builds the manifest from your existing profiles |
 | `zsh: command not found: clp` | Not linked/installed — see Install; if just linked, run `rehash` |
 | ``cannot reach <host> — is `ccprofiles serve` running?`` | Start `clp serve` on the other device; check you're on the same network and the port matches |
-| `encrypted-file backend requires a passphrase` | On Windows, secrets use DPAPI automatically (needs PowerShell); otherwise set `CCPROFILES_PASSPHRASE` (headless Linux without libsecret) |
+| `encrypted-file backend requires a passphrase` / secrets tab errors | No OS keyring available. **Linux desktop:** `sudo apt install libsecret-tools` + a running keyring. **Headless Linux / server:** `export CCPROFILES_PASSPHRASE='…'` before `clp ui` (persist in `~/.bashrc`). **Windows:** secrets use DPAPI automatically (needs PowerShell). See [Where secrets are stored](#where-secrets-are-stored-per-os-setup) |
 | `cl-*` launcher not found on Windows | Use PowerShell 7 (`pwsh`), not Windows PowerShell 5.1; reload with `. $PROFILE`; if scripts are blocked run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. Confirm `$PROFILE` matches `Documents\PowerShell\Microsoft.PowerShell_profile.ps1` (OneDrive can redirect it) |
 | Profile shows account `-` after sync | Expected — run `/login` inside that profile once; OAuth sessions don't sync |
 | Something went wrong after `apply` | Restore from `~/.ccprofiles/backups/<latest>/` |
