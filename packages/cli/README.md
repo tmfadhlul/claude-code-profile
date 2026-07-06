@@ -158,7 +158,7 @@ clp ui                   # opens http://127.0.0.1:<port>/?t=<token> in your brow
 
 A local panel to manage everything the CLI does — and the easiest way to set profiles up:
 
-- **Profiles** — create, edit, and delete profiles from a form: launcher function, environment variables, links, MCP toggles, and a **guided Provider section** (preset picker for z.ai / mimo / OpenRouter / Anthropic-default / Custom, labeled base-URL / token / model fields, copy-from-another-profile, and an *Advanced* raw editor for any other `settings.json` env var). Deleting a profile is manifest-only — the `~/.claude-*` directory stays on disk.
+- **Profiles** — create, edit, and delete profiles from a form: launcher function, environment variables, links, MCP toggles, a **guided Provider section** (preset picker for z.ai / mimo / OpenRouter / Anthropic-default / Custom, labeled base-URL / token / model fields, copy-from-another-profile, and an *Advanced* raw editor for any other `settings.json` env var), and a **Skip permissions** toggle that adds `--dangerously-skip-permissions` to that profile's launcher (⚠ bypasses every confirmation — launcher profiles only). Deleting a profile is manifest-only — the `~/.claude-*` directory stays on disk.
 - **Shell RC** — preview the managed block in your `.zshrc`/`.bashrc` vs. what the manifest renders, with a one-click update.
 - **MCP servers** (interactive drift matrix), **Secrets** (add / reveal / delete / migrate, plus attach a secret to a profile as an env var), **Sync**, and **Doctor**.
 
