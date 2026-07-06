@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/sonner'
 import { api } from '@/lib/api'
 import { splitProviderEnv, mergeProviderEnv } from '@/lib/provider'
 import { ProviderForm } from '@/components/ProviderForm'
+import { cn } from '@/lib/utils'
 import { X } from 'lucide-react'
 
 export type ProfileRow = {
@@ -14,6 +15,7 @@ export type ProfileRow = {
   launcher: string | null; adopted: boolean
   env: Record<string, string>; links: Record<string, string>; mcpNames: string[]
   settingsEnv: Record<string, string>; liveSettingsEnv: Record<string, string>
+  skipPermissions: boolean
 }
 
 const SECRET_PREFIX = 'secret://'
@@ -65,6 +67,7 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
   onClose: () => void; onSaved: () => void
 }) {
   const [launcher, setLauncher] = useState(profile.launcher ?? '')
+  const [skipPermissions, setSkipPermissions] = useState(profile.skipPermissions)
   const [env, setEnv] = useState<EnvRow[]>(toEnvRows(profile.env))
   const seeded = Object.keys(profile.settingsEnv).length ? profile.settingsEnv : profile.liveSettingsEnv
   const [pform, setPform] = useState(() => splitProviderEnv(seeded).form)
@@ -83,6 +86,7 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
       for (const r of links) if (r.key.trim()) linksObj[r.key.trim()] = r.value
       await api.patchProfile(profile.name, {
         env: fromEnvRows(env), settingsEnv: mergeProviderEnv(pform, fromEnvRows(padv)), links: linksObj, launcher: launcher.trim() || null,
+        skipPermissions,
       })
       for (const s of mcp.filter(s => !profile.mcpNames.includes(s))) await api.addMcp({ name: s, targets: [profile.name] })
       for (const s of profile.mcpNames.filter(s => !mcp.includes(s))) await api.rmMcp(s, [profile.name])
@@ -99,6 +103,17 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
           <div className="space-y-1.5">
             <Label>Launcher function</Label>
             <Input value={launcher} onChange={e => setLauncher(e.target.value)} placeholder="cl-work (empty = no launcher)" />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className={cn('flex items-center gap-2 text-sm', !launcher.trim() && 'opacity-50')}>
+              <input type="checkbox" checked={skipPermissions} disabled={!launcher.trim()}
+                onChange={e => setSkipPermissions(e.target.checked)} />
+              Skip all permission prompts (<span className="font-mono text-xs">--dangerously-skip-permissions</span>)
+            </label>
+            {!launcher.trim()
+              ? <p className="text-xs text-muted-foreground">No launcher — plain <span className="font-mono">claude</span> can't take this flag.</p>
+              : skipPermissions && <p className="text-xs text-red-600 dark:text-red-400">⚠ Bypasses every confirmation — use only for profiles you fully trust.</p>}
           </div>
 
           <div className="space-y-1.5">

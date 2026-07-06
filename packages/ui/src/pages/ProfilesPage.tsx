@@ -72,7 +72,10 @@ export function ProfilesPage() {
               <TableCell>{r.auth}</TableCell>
               <TableCell className="text-muted-foreground">{r.account ?? '—'}</TableCell>
               <TableCell>{r.mcp}</TableCell>
-              <TableCell className="font-mono text-xs">{r.launcher ?? '—'}</TableCell>
+              <TableCell className="font-mono text-xs">
+                {r.launcher ?? '—'}
+                {r.skipPermissions && <span className="ml-1.5 rounded bg-red-500/15 text-red-600 dark:text-red-400 px-1 py-0.5 text-[10px] not-italic">skip-perms</span>}
+              </TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">{providerHost(r)}</TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">{Object.keys(r.env).length || '—'}</TableCell>
               <TableCell>
