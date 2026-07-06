@@ -134,6 +134,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       if (typeof body.skipPermissions !== 'boolean') throw new HttpError(400, 'skipPermissions must be a boolean')
       pr.skipPermissions = body.skipPermissions
     }
+    if (!pr.launcher) pr.skipPermissions = false // the flag only lives in a launcher; keep it off without one
     assertSafe(m)
     try { await planActionsPreflight(ctx, m) } catch (e) { throw new HttpError(400, (e as Error).message) }
     await saveManifest(ctx.manifestRoot, m)
