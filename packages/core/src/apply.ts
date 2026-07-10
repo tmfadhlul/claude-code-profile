@@ -1,12 +1,13 @@
 import { cp, lstat, mkdir, readFile, rm, symlink, unlink } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, isAbsolute, relative } from 'node:path'
 import type { Manifest, McpServerDef } from './manifest.js'
 import type { LiveProfile } from './discovery.js'
 import { renderPath, type Platform } from './platform.js'
 import { renderRcBlock, upsertManagedBlock } from './rcblock.js'
 import { atomicWrite, backupFiles, backupTree } from './fsutil.js'
 import { writeCodexMcpServers } from './codex.js'
+import { physicalLinkEntry } from './links.js'
 
 export type ApplyAction =
   | { kind: 'set-mcp-servers'; agent: 'claude' | 'codex'; configPath: string; servers: Record<string, McpServerDef> }
@@ -28,6 +29,11 @@ function sortKeys(o: Record<string, unknown>): Record<string, unknown> {
 
 const SECRET_PREFIX = 'secret://'
 const CLAUDE_SHARED_ENTRIES = ['projects', 'todos', 'shell-snapshots'] as const
+
+function isWithin(parent: string, child: string): boolean {
+  const rel = relative(parent, child)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && !isAbsolute(rel))
+}
 
 /** Resolve secret:// refs in every profile's settingsEnv. Throws on a missing secret. */
 export async function resolveSettingsEnv(
@@ -69,10 +75,14 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
     }
 
     for (const [entry, target] of Object.entries(pr.links)) {
+      const physicalEntry = physicalLinkEntry(agent, entry)
       const to = target === 'hub' && hubProfile
-        ? join(renderPath(hubProfile.dir, p), entry)
+        ? join(renderPath(hubProfile.dir, p), physicalLinkEntry(hubProfile.agent ?? 'claude', entry))
         : renderPath(target, p)
-      const from = join(dir, entry)
+      const from = join(dir, physicalEntry)
+      if (from === to) continue
+      if (isWithin(from, to) || isWithin(to, from))
+        throw new Error(`unsafe link topology: ${from} -> ${to} (source and target must not contain each other)`)
       if (lp?.links[entry] === to) continue
       actions.push({ kind: 'link', from, to })
     }
@@ -121,7 +131,7 @@ export async function executeApply(
     : a.kind === 'rc-block' ? [a.rcFile]
     : a.kind === 'set-settings-env' ? [a.settingsPath]
     : [])
-  const backupDir = touched.length ? await backupFiles(touched, opts.backupRoot, opts.stamp) : null
+  let backupDir = touched.length ? await backupFiles(touched, opts.backupRoot, opts.stamp) : null
 
   for (const a of actions) {
     if (a.kind === 'create-profile-dir') {
@@ -138,15 +148,23 @@ export async function executeApply(
       await mkdir(dirname(a.configPath), { recursive: true })
       await atomicWrite(a.configPath, JSON.stringify(cfg, null, 2))
     } else if (a.kind === 'link') {
+      let st: Awaited<ReturnType<typeof lstat>> | null = null
       try {
-        const st = await lstat(a.from)
-        if (!st.isSymbolicLink()) throw new Error(`refusing to replace non-symlink: ${a.from}`)
+        st = await lstat(a.from)
+      } catch { /* absent */ }
+      if (st && !st.isSymbolicLink()) {
+        // Preserve profile-local assets, then merge unique entries into shared target.
+        // Existing target files win name conflicts; complete source remains in backup.
+        const treeBackup = await backupTree(a.from, opts.backupRoot, opts.stamp)
+        if (treeBackup) backupDir ??= dirname(treeBackup)
+        await mkdir(a.to, { recursive: true })
+        await cp(a.from, a.to, { recursive: true, force: false, errorOnExist: false })
+        await rm(a.from, { recursive: true, force: true })
+      } else if (st) {
         await unlink(a.from)
-      } catch (e: any) {
-        if (e.code !== 'ENOENT') {
-          if (typeof e.message === 'string' && e.message.startsWith('refusing')) throw e
-        }
       }
+      await mkdir(a.to, { recursive: true })
+      await mkdir(dirname(a.from), { recursive: true })
       await symlink(a.to, a.from, process.platform === 'win32' ? 'junction' : 'dir')
     } else if (a.kind === 'rc-block') {
       let rc = ''
@@ -164,7 +182,8 @@ export async function executeApply(
       let st: Awaited<ReturnType<typeof lstat>> | null = null
       try { st = await lstat(a.from) } catch { /* absent */ }
       if (st && !st.isSymbolicLink()) {
-        await backupTree(a.from, opts.backupRoot, opts.stamp)
+        const treeBackup = await backupTree(a.from, opts.backupRoot, opts.stamp)
+        if (treeBackup) backupDir ??= dirname(treeBackup)
         await cp(a.from, a.to, { recursive: true, force: false, errorOnExist: false })
         await rm(a.from, { recursive: true, force: true })
       } else if (st && st.isSymbolicLink()) {

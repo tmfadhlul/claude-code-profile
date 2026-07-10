@@ -1,161 +1,42 @@
 import { useEffect, useState } from 'react'
+import { Eye, EyeOff, KeyRound, Link2, Plus, ShieldCheck, Trash2, Unlink, WandSparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/sonner'
 import { api } from '@/lib/api'
 import type { ProfileRow } from '@/components/ProfileEditor'
+import { EmptyState, LoadingState, PageHeader, StatusPill } from '@/components/Page'
 
 const SECRET_PREFIX = 'secret://'
 type Usage = { profile: string; envKey: string; map: 'env' | 'settingsEnv' }
-
 export function SecretsPage() {
-  const [names, setNames] = useState<string[]>([]); const [backend, setBackend] = useState('')
-  const [profiles, setProfiles] = useState<ProfileRow[]>([])
-  const [shown, setShown] = useState<Record<string, string>>({})
+  const [names, setNames] = useState<string[] | null>(null); const [backend, setBackend] = useState('')
+  const [profiles, setProfiles] = useState<ProfileRow[]>([]); const [shown, setShown] = useState<Record<string, string>>({})
   const [open, setOpen] = useState(false); const [f, setF] = useState({ name: '', value: '' })
-  const [attaching, setAttaching] = useState<string | null>(null)
+  const [attaching, setAttaching] = useState<string | null>(null); const [deleting, setDeleting] = useState<string | null>(null)
   const [att, setAtt] = useState({ profile: '', envKey: 'ANTHROPIC_API_KEY' })
-
-  const load = async () => {
-    try { const r = await api.secrets(); setNames(r.names); setBackend(r.backend) } catch (e: any) { toast.error(e.message) }
-    try { setProfiles(await api.profiles()) } catch { setProfiles([]) }
-  }
+  const load = async () => { try { const r = await api.secrets(); setNames(r.names); setBackend(r.backend) } catch (e: any) { toast.error(e.message); setNames([]) } try { setProfiles(await api.profiles()) } catch { setProfiles([]) } }
   useEffect(() => { load() }, [])
-
-  const usage = (secret: string): Usage[] =>
-    profiles.flatMap(p => [
-      ...Object.entries(p.env)
-        .filter(([, v]) => v === SECRET_PREFIX + secret)
-        .map(([envKey]) => ({ profile: p.name, envKey, map: 'env' as const })),
-      ...Object.entries(p.settingsEnv)
-        .filter(([, v]) => v === SECRET_PREFIX + secret)
-        .map(([envKey]) => ({ profile: p.name, envKey, map: 'settingsEnv' as const })),
-    ])
-
-  const reveal = async (n: string) => {
-    if (shown[n] !== undefined) { const c = { ...shown }; delete c[n]; setShown(c); return }
-    try { const r = await api.revealSecret(n); setShown({ ...shown, [n]: r.value }) } catch (e: any) { toast.error(e.message) }
-  }
-
-  const attach = async () => {
-    if (!attaching || !att.profile || !att.envKey.trim()) return
-    const p = profiles.find(x => x.name === att.profile)
-    if (!p) return
-    try {
-      await api.patchProfile(p.name, { env: { ...p.env, [att.envKey.trim()]: SECRET_PREFIX + attaching } })
-      toast.success(`Attached ${attaching} to ${p.name} as ${att.envKey.trim()}`)
-      setAttaching(null); setAtt({ profile: '', envKey: 'ANTHROPIC_API_KEY' }); load()
-    } catch (e: any) { toast.error(e.message) }
-  }
-
-  const detach = async (secret: string, u: Usage) => {
-    const p = profiles.find(x => x.name === u.profile)
-    if (!p) return
-    const patch = u.map === 'env'
-      ? { env: (() => { const env = { ...p.env }; delete env[u.envKey]; return env })() }
-      : { settingsEnv: (() => { const settingsEnv = { ...p.settingsEnv }; delete settingsEnv[u.envKey]; return settingsEnv })() }
-    try { await api.patchProfile(p.name, patch); toast.success(`Detached ${secret} from ${u.profile}`); load() }
-    catch (e: any) { toast.error(e.message) }
-  }
-
+  const usage = (secret: string): Usage[] => profiles.flatMap(p => [...Object.entries(p.env).filter(([, v]) => v === SECRET_PREFIX + secret).map(([envKey]) => ({ profile: p.name, envKey, map: 'env' as const })), ...Object.entries(p.settingsEnv).filter(([, v]) => v === SECRET_PREFIX + secret).map(([envKey]) => ({ profile: p.name, envKey, map: 'settingsEnv' as const }))])
+  const reveal = async (n: string) => { if (shown[n] !== undefined) { const c = { ...shown }; delete c[n]; setShown(c); return } try { const r = await api.revealSecret(n); setShown({ ...shown, [n]: r.value }) } catch (e: any) { toast.error(e.message) } }
+  const attach = async () => { if (!attaching || !att.profile || !att.envKey.trim()) return; const p = profiles.find(x => x.name === att.profile); if (!p) return; try { await api.patchProfile(p.name, { env: { ...p.env, [att.envKey.trim()]: SECRET_PREFIX + attaching } }); toast.success(`Attached ${attaching} to ${p.name}`); setAttaching(null); setAtt({ profile: '', envKey: 'ANTHROPIC_API_KEY' }); load() } catch (e: any) { toast.error(e.message) } }
+  const detach = async (secret: string, u: Usage) => { const p = profiles.find(x => x.name === u.profile); if (!p) return; const patch = u.map === 'env' ? { env: (() => { const env = { ...p.env }; delete env[u.envKey]; return env })() } : { settingsEnv: (() => { const settingsEnv = { ...p.settingsEnv }; delete settingsEnv[u.envKey]; return settingsEnv })() }; try { await api.patchProfile(p.name, patch); toast.success(`Detached ${secret} from ${u.profile}`); load() } catch (e: any) { toast.error(e.message) } }
   const adopted = profiles.filter(p => p.adopted)
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold flex items-center gap-2">Secrets <Badge variant="secondary">{backend}</Badge></h1>
-      </div>
-      {backend === 'unavailable' ? (
-        <div className="border rounded-lg p-4 text-sm space-y-1">
-          <div className="font-medium">Secrets backend not configured</div>
-          <p className="text-muted-foreground">
-            On Windows this uses DPAPI automatically (needs PowerShell). Otherwise set
-            <span className="font-mono"> CCPROFILES_PASSPHRASE</span> in your environment to enable the encrypted-file backend, then reopen this page.
-          </p>
-        </div>
-      ) : (
-        <>
-          <div className="flex items-center justify-end">
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={async () => {
-                try { const r = await api.migrate(); toast.success(r.migrated.length ? `Migrated ${r.migrated.join(', ')}` : 'No plaintext keys found'); load() } catch (e: any) { toast.error(e.message) }
-              }}>Migrate plaintext keys</Button>
-              <Dialog open={open} onOpenChange={setOpen}>
-                <DialogTrigger asChild><Button>Add secret</Button></DialogTrigger>
-                <DialogContent>
-                  <DialogHeader><DialogTitle>Add secret</DialogTitle></DialogHeader>
-                  <div className="space-y-3">
-                    <div className="space-y-1.5"><Label>Name</Label><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="anthropic-api-key" /></div>
-                    <div className="space-y-1.5"><Label>Value</Label><Input type="password" value={f.value} onChange={e => setF({ ...f, value: e.target.value })} /></div>
-                  </div>
-                  <DialogFooter><Button onClick={async () => {
-                    try { await api.setSecret(f.name, f.value); toast.success(`Stored ${f.name}`); setOpen(false); setF({ name: '', value: '' }); load() } catch (e: any) { toast.error(e.message) }
-                  }}>Save</Button></DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
-          <div className="divide-y border rounded-lg">
-          {names.map(n => {
-            const used = usage(n)
-            return (
-              <div key={n} className="flex items-center justify-between p-3 gap-3">
-                <div className="min-w-0">
-                  <div className="font-mono text-sm">{n}{shown[n] !== undefined && <span className="ml-3 text-muted-foreground">{shown[n]}</span>}</div>
-                  {used.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {used.map(u => (
-                        <Badge key={`${u.profile}-${u.map}-${u.envKey}`} variant="secondary" className="font-mono text-[11px] gap-1">
-                          {u.profile} · {u.envKey}{u.map === 'settingsEnv' && <span className="text-muted-foreground"> (settings)</span>}
-                          <button className="ml-0.5 hover:text-foreground" title="Detach" onClick={() => detach(n, u)}>×</button>
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button size="sm" variant="ghost" onClick={() => setAttaching(n)}>Attach</Button>
-                  <Button size="sm" variant="ghost" onClick={() => reveal(n)}>{shown[n] !== undefined ? 'Hide' : 'Reveal'}</Button>
-                  <Button size="sm" variant="ghost" onClick={async () => { try { await api.rmSecret(n); toast.success(`Removed ${n}`); load() } catch (e: any) { toast.error(e.message) } }}>Delete</Button>
-                </div>
-              </div>
-            )
-          })}
-          {names.length === 0 && <div className="p-3 text-sm text-muted-foreground">No secrets yet.</div>}
-          </div>
-        </>
-      )}
+  const addDialog = <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button><Plus className="h-4 w-4" /> Add secret</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>Store a secret</DialogTitle><p className="text-sm leading-6 text-muted-foreground">Value stays in encrypted backend. Profiles reference it by name.</p></DialogHeader><div className="space-y-4"><div><Label className="field-label">Reference name</Label><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="anthropic-api-key" autoFocus /></div><div><Label className="field-label">Secret value</Label><Input type="password" value={f.value} onChange={e => setF({ ...f, value: e.target.value })} autoComplete="new-password" /></div></div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button disabled={!f.name.trim() || !f.value} onClick={async () => { try { await api.setSecret(f.name.trim(), f.value); toast.success(`Stored ${f.name.trim()}`); setOpen(false); setF({ name: '', value: '' }); load() } catch (e: any) { toast.error(e.message) } }}>Store secret</Button></DialogFooter></DialogContent></Dialog>
 
-      {attaching && (
-        <Dialog open onOpenChange={o => { if (!o) setAttaching(null) }}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Attach {attaching} to a profile</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label>Profile</Label>
-                <select className="w-full border rounded-md h-9 px-2 bg-background text-sm" value={att.profile} onChange={e => setAtt({ ...att, profile: e.target.value })}>
-                  <option value="">— pick profile —</option>
-                  {adopted.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Env var name</Label>
-                <Input className="font-mono" value={att.envKey} onChange={e => setAtt({ ...att, envKey: e.target.value })} />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                The launcher will export it as <span className="font-mono">{att.envKey || 'VAR'}="$(ccprofiles secrets get {attaching})"</span> — the value never lands in your rc file.
-              </p>
-            </div>
-            <DialogFooter>
-              <Button variant="secondary" onClick={() => setAttaching(null)}>Cancel</Button>
-              <Button disabled={!att.profile || !att.envKey.trim()} onClick={attach}>Attach</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-    </div>
-  )
+  return <>
+    <PageHeader eyebrow="Credential vault" title="Secrets" description="Store credentials once, then attach named references to profiles without writing plaintext into shell files." actions={<>{names && backend !== 'unavailable' && <StatusPill tone="good">{backend}</StatusPill>}{backend !== 'unavailable' && addDialog}</>} />
+    {names === null ? <LoadingState label="Opening secrets backend" /> : backend === 'unavailable' ? <EmptyState icon={KeyRound} title="Secrets backend unavailable" description="Windows uses DPAPI automatically. On other systems, set CCPROFILES_PASSPHRASE and reopen this page." /> : <div className="space-y-5">
+      <section className="surface-flat flex flex-col gap-4 p-5 sm:flex-row sm:items-center"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-emerald-700/10 text-emerald-800"><ShieldCheck className="h-5 w-5" /></span><div className="flex-1"><h2 className="text-sm font-bold">Encrypted at rest</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Values resolve only when a managed launcher runs. References remain safe to sync.</p></div><Button variant="outline" onClick={async () => { try { const r = await api.migrate(); toast.success(r.migrated.length ? `Migrated ${r.migrated.join(', ')}` : 'No plaintext keys found'); load() } catch (e: any) { toast.error(e.message) } }}><WandSparkles className="h-4 w-4" /> Migrate plaintext keys</Button></section>
+      {names.length === 0 ? <EmptyState icon={KeyRound} title="Vault is empty" description="Add a credential, then attach it to one or more profiles as an environment variable." action={<Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Add secret</Button>} /> : <div className="surface-flat divide-y overflow-hidden">{names.map(n => { const used = usage(n); return <article key={n} className="p-5 sm:p-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-start"><div className="flex min-w-0 flex-1 gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted"><KeyRound className="h-4 w-4 text-primary" /></span><div className="min-w-0"><h2 className="truncate font-mono text-sm font-bold">{n}</h2><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{shown[n] !== undefined ? shown[n] : '••••••••••••••••••••••••'}</p></div></div><div className="flex shrink-0 flex-wrap gap-1"><Button size="sm" variant="ghost" onClick={() => setAttaching(n)}><Link2 className="h-3.5 w-3.5" /> Attach</Button><Button size="sm" variant="ghost" onClick={() => reveal(n)}>{shown[n] !== undefined ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}{shown[n] !== undefined ? 'Hide' : 'Reveal'}</Button><Button size="icon" variant="ghost" className="h-9 w-9 text-muted-foreground hover:text-destructive" onClick={() => setDeleting(n)} aria-label={`Delete ${n}`}><Trash2 className="h-4 w-4" /></Button></div></div>
+          <div className="mt-4 border-t pt-4"><p className="mb-2 text-[0.62rem] font-bold uppercase tracking-wider text-muted-foreground">Used by {used.length || 'no'} profile{used.length === 1 ? '' : 's'}</p>{used.length ? <div className="flex flex-wrap gap-2">{used.map(u => <span key={`${u.profile}-${u.map}-${u.envKey}`} className="inline-flex items-center gap-2 rounded-full border bg-muted/45 px-3 py-1.5 font-mono text-[0.68rem]"><span>{u.profile} · {u.envKey}{u.map === 'settingsEnv' ? ' · settings' : ''}</span><button className="text-muted-foreground hover:text-destructive" title={`Detach from ${u.profile}`} onClick={() => detach(n, u)}><Unlink className="h-3 w-3" /><span className="sr-only">Detach</span></button></span>)}</div> : <p className="text-xs text-muted-foreground">Not attached. Secret remains safely stored.</p>}</div>
+        </article> })}</div>}
+    </div>}
+
+    {attaching && <Dialog open onOpenChange={o => { if (!o) setAttaching(null) }}><DialogContent><DialogHeader><DialogTitle>Attach “{attaching}”</DialogTitle><p className="text-sm leading-6 text-muted-foreground">Choose profile and environment variable name. Only secret reference enters manifest.</p></DialogHeader><div className="space-y-4"><div><Label className="field-label">Profile</Label><select className="select-field" value={att.profile} onChange={e => setAtt({ ...att, profile: e.target.value })}><option value="">Choose profile…</option>{adopted.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}</select></div><div><Label className="field-label">Environment variable</Label><Input className="font-mono" value={att.envKey} onChange={e => setAtt({ ...att, envKey: e.target.value })} /></div><div className="rounded-lg border bg-muted/35 p-3 font-mono text-[0.68rem] leading-5 text-muted-foreground">{att.envKey || 'VAR'}="$(ccprofiles secrets get {attaching})"</div></div><DialogFooter><Button variant="outline" onClick={() => setAttaching(null)}>Cancel</Button><Button disabled={!att.profile || !att.envKey.trim()} onClick={attach}>Attach secret</Button></DialogFooter></DialogContent></Dialog>}
+    {deleting && <Dialog open onOpenChange={o => { if (!o) setDeleting(null) }}><DialogContent><DialogHeader><DialogTitle>Delete “{deleting}”?</DialogTitle><p className="text-sm leading-6 text-muted-foreground">Stored value is permanently removed. Existing profile references will stop resolving.</p></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setDeleting(null)}>Cancel</Button><Button variant="destructive" onClick={async () => { try { await api.rmSecret(deleting); toast.success(`Removed ${deleting}`); setDeleting(null); load() } catch (e: any) { toast.error(e.message) } }}>Delete secret</Button></DialogFooter></DialogContent></Dialog>}
+  </>
 }

@@ -47,6 +47,7 @@ export type Manifest = z.infer<typeof ManifestSchema>
 // identifiers that get interpolated into shell launcher code must be injection-safe
 const SAFE_NAME = /^[A-Za-z0-9_-]+$/          // profile names, launcher names, secret refs
 const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/ // POSIX/PowerShell env var names
+const SAFE_LINK_ENTRY = /^[A-Za-z0-9._-]+$/     // one profile-dir child; never a path
 const SHELL_META = /["`$;|&()\n\r<>]/         // chars that could break out of a quoted shell context
 const SECRET_PREFIX = 'secret://'
 
@@ -73,6 +74,10 @@ export function assertSafeManifest(m: Manifest): void {
         const ref = v.slice(SECRET_PREFIX.length)
         if (!SAFE_NAME.test(ref)) throw new ManifestError(`unsafe secret reference in profile "${p.name}": ${JSON.stringify(v)}`)
       }
+    }
+    for (const entry of Object.keys(p.links)) {
+      if (!SAFE_LINK_ENTRY.test(entry) || entry === '.' || entry === '..')
+        throw new ManifestError(`unsafe link entry in profile "${p.name}": ${JSON.stringify(entry)} (must be one file or directory name)`)
     }
   }
 }

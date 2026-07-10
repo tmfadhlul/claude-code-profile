@@ -2,6 +2,7 @@ import { access, readdir, readFile, readlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { McpServerDef } from './manifest.js'
 import { readCodexMcpServers } from './codex.js'
+import { logicalLinkEntry } from './links.js'
 
 export interface LiveProfile {
   agent: 'claude' | 'codex'
@@ -44,7 +45,7 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
       if (child.isSymbolicLink()) {
         try {
           // windows junctions read back as \\?\C:\... with a trailing separator — normalize
-          links[child.name] = (await readlink(join(dir, child.name)))
+          links[logicalLinkEntry(agent, child.name)] = (await readlink(join(dir, child.name)))
             .replace(/^\\\\\?\\/, '').replace(/([\\/])+$/, '')
         } catch { /* skip */ }
       }

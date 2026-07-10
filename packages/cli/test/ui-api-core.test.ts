@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, lstat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -172,5 +172,23 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     expect(profile).toMatchObject({ agent: 'codex', launcher: 'cx-work', sharedSessions: true })
     const sessions = (await callApi(ctx, 'GET', '/api/sessions'))._json
     expect(sessions.find((p: any) => p.project === '/tmp/ui-codex')).toMatchObject({ agent: 'codex', scope: 'shared' })
+  })
+  it('UI safely merges existing Codex skills and prompts into the shared Claude hub', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const manifestPath = join(ctx.manifestRoot, 'manifest.yaml')
+    const m = parseManifest(await readFile(manifestPath, 'utf8'))
+    m.hub = 'default'
+    await writeFile(manifestPath, serializeManifest(m))
+    await mkdir(join(home, '.codex-work', 'skills', 'codex-only'), { recursive: true })
+    await mkdir(join(home, '.codex-work', 'prompts'), { recursive: true })
+    await writeFile(join(home, '.codex-work', 'skills', 'codex-only', 'SKILL.md'), '# codex skill')
+    await writeFile(join(home, '.codex-work', 'prompts', 'review.md'), '# review prompt')
+
+    const created = await callApi(ctx, 'POST', '/api/profiles', { name: 'work', agent: 'codex' })
+    expect(created._status).toBe(200)
+    expect((await lstat(join(home, '.codex-work', 'skills'))).isSymbolicLink()).toBe(true)
+    expect((await lstat(join(home, '.codex-work', 'prompts'))).isSymbolicLink()).toBe(true)
+    expect(await readFile(join(home, '.claude', 'skills', 'codex-only', 'SKILL.md'), 'utf8')).toBe('# codex skill')
+    expect(await readFile(join(home, '.claude', 'commands', 'review.md'), 'utf8')).toBe('# review prompt')
   })
 })
