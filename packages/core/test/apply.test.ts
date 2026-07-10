@@ -71,7 +71,7 @@ describe('settingsEnv apply', () => {
   const platformFor = (home: string) => detectPlatform({ home, shell: '/bin/zsh' })
   const manifestWith = (settingsEnv: Record<string, string>): Manifest => ({
     version: 1, hub: null, mcpServers: {},
-    profiles: [{ name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv, skipPermissions: false }],
+    profiles: [{ name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv, skipPermissions: false, sharedSessions: false }],
   })
 
   it('resolveSettingsEnv resolves secret refs and passes plain values', async () => {
