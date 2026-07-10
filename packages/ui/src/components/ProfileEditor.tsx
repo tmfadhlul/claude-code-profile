@@ -16,6 +16,7 @@ export type ProfileRow = {
   env: Record<string, string>; links: Record<string, string>; mcpNames: string[]
   settingsEnv: Record<string, string>; liveSettingsEnv: Record<string, string>
   skipPermissions: boolean
+  sharedSessions: boolean
 }
 
 const SECRET_PREFIX = 'secret://'
@@ -68,6 +69,7 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
 }) {
   const [launcher, setLauncher] = useState(profile.launcher ?? '')
   const [skipPermissions, setSkipPermissions] = useState(profile.skipPermissions)
+  const [sharedSessions, setSharedSessions] = useState(profile.sharedSessions)
   const [env, setEnv] = useState<EnvRow[]>(toEnvRows(profile.env))
   const seeded = Object.keys(profile.settingsEnv).length ? profile.settingsEnv : profile.liveSettingsEnv
   const [pform, setPform] = useState(() => splitProviderEnv(seeded).form)
@@ -88,6 +90,7 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
         env: fromEnvRows(env), settingsEnv: profile.agent === 'claude' ? mergeProviderEnv(pform, fromEnvRows(padv)) : undefined,
         links: linksObj, launcher: launcher.trim() || null,
         skipPermissions: launcher.trim() ? skipPermissions : false,
+        sharedSessions,
       })
       for (const s of mcp.filter(s => !profile.mcpNames.includes(s))) await api.addMcp({ name: s, targets: [profile.name] })
       for (const s of profile.mcpNames.filter(s => !mcp.includes(s))) await api.rmMcp(s, [profile.name])
@@ -115,6 +118,14 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
             {!launcher.trim()
               ? <p className="text-xs text-muted-foreground">No launcher — plain <span className="font-mono">{profile.agent}</span> won't use this managed flag.</p>
               : skipPermissions && <p className="text-xs text-red-600 dark:text-red-400">⚠ Bypasses every confirmation — use only for profiles you fully trust.</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={sharedSessions} onChange={e => setSharedSessions(e.target.checked)} />
+              Share session history (pool <span className="font-mono text-xs">projects / todos / shell-snapshots</span> with other shared profiles)
+            </label>
+            <p className="text-xs text-muted-foreground">First enable migrates this profile's existing sessions into the shared pool (a backup is taken).</p>
           </div>
 
           <div className="space-y-1.5">

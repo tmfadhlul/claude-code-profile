@@ -31,6 +31,7 @@ export const api = {
   status: () => req('GET', '/api/status'),
   apply: () => req('POST', '/api/apply'),
   doctor: () => req('GET', '/api/doctor'),
+  sessions: () => req('GET', '/api/sessions'),
   devices: () => req('GET', '/api/devices'),
   sync: (from: string, withSecrets: boolean) => req('POST', '/api/sync', { from, withSecrets }),
 }
