@@ -65,7 +65,6 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
         settingsEnv: {},
         skipPermissions: false,
         sharedSessions: false,
-        sharedPlugins: false,
       })
       await saveManifest(ctx.manifestRoot, m)
       const actions = await planActions(ctx, m)
