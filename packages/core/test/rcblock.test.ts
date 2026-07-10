@@ -83,6 +83,40 @@ describe('renderRcBlock', () => {
   })
 })
 
+function manifestWith(agent: 'claude' | 'codex'): Manifest {
+  return {
+    version: 1, hub: null, mcpServers: {},
+    profiles: [{
+      agent, name: agent === 'codex' ? 'codex-work' : 'oauth',
+      dir: agent === 'codex' ? '{home}/.codex-work' : '{home}/.claude-oauth',
+      launcher: agent === 'codex' ? 'cx-work' : 'cl-oauth',
+      auth: 'oauth', env: {}, links: {}, mcp: [], settingsEnv: {},
+      skipPermissions: false, sharedSessions: false,
+    }],
+  }
+}
+
+describe('handoff intercept in launchers', () => {
+  it('posix launcher intercepts handoff before env, bound to the profile name', () => {
+    const p = detectPlatform({ osKind: 'darwin', home: '/home/u', shell: '/bin/zsh' })
+    const block = renderRcBlock(manifestWith('claude'), p)
+    expect(block).toContain('cl-oauth() {')
+    expect(block).toContain('if [ "$1" = handoff ]; then shift; command ccprofiles handoff --from oauth --to "$1"; return; fi')
+    // guard precedes the launch line
+    expect(block.indexOf('handoff --from oauth')).toBeLessThan(block.indexOf('CLAUDE_CONFIG_DIR='))
+  })
+  it('codex launcher gets a handoff intercept too', () => {
+    const p = detectPlatform({ osKind: 'darwin', home: '/home/u', shell: '/bin/zsh' })
+    const block = renderRcBlock(manifestWith('codex'), p)
+    expect(block).toContain('command ccprofiles handoff --from codex-work --to "$1"')
+  })
+  it('powershell launcher intercepts handoff', () => {
+    const p = detectPlatform({ osKind: 'win32', home: 'C:/Users/u', shell: 'pwsh' })
+    const block = renderRcBlock(manifestWith('claude'), p)
+    expect(block).toContain("if ($args[0] -eq 'handoff') { ccprofiles handoff --from oauth --to $args[1]; return }")
+  })
+})
+
 describe('upsertManagedBlock', () => {
   it('appends when absent', () => {
     const out = upsertManagedBlock('export PATH=/x\n', `${BEGIN_MARK}\nX\n${END_MARK}`)
