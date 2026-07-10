@@ -1,186 +1,68 @@
 import { useState } from 'react'
+import { Boxes, History, Link2, Plus, Settings2, ShieldAlert, Terminal, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { toast } from '@/components/ui/sonner'
 import { api } from '@/lib/api'
 import { splitProviderEnv, mergeProviderEnv } from '@/lib/provider'
 import { ProviderForm } from '@/components/ProviderForm'
 import { cn } from '@/lib/utils'
-import { X } from 'lucide-react'
+import { StatusPill } from '@/components/Page'
 
 export type ProfileRow = {
   name: string; agent: 'claude' | 'codex'; dir: string; auth: string; account: string | null; mcp: number
-  launcher: string | null; adopted: boolean
-  env: Record<string, string>; links: Record<string, string>; mcpNames: string[]
-  settingsEnv: Record<string, string>; liveSettingsEnv: Record<string, string>
-  skipPermissions: boolean
-  sharedSessions: boolean
+  launcher: string | null; adopted: boolean; env: Record<string, string>; links: Record<string, string>; mcpNames: string[]
+  settingsEnv: Record<string, string>; liveSettingsEnv: Record<string, string>; skipPermissions: boolean; sharedSessions: boolean
 }
-
 const SECRET_PREFIX = 'secret://'
 type EnvRow = { key: string; value: string; secret: boolean }
 type KvRow = { key: string; value: string }
+type Tab = 'runtime' | 'provider' | 'connections'
 
-function toEnvRows(env: Record<string, string>): EnvRow[] {
-  return Object.entries(env).map(([key, value]) => value.startsWith(SECRET_PREFIX)
-    ? { key, value: value.slice(SECRET_PREFIX.length), secret: true }
-    : { key, value, secret: false })
-}
+function toEnvRows(env: Record<string, string>): EnvRow[] { return Object.entries(env).map(([key, value]) => value.startsWith(SECRET_PREFIX) ? { key, value: value.slice(SECRET_PREFIX.length), secret: true } : { key, value, secret: false }) }
+function fromEnvRows(rows: EnvRow[]): Record<string, string> { const out: Record<string, string> = {}; for (const r of rows) if (r.key.trim()) out[r.key.trim()] = r.secret ? SECRET_PREFIX + r.value : r.value; return out }
 
-function fromEnvRows(rows: EnvRow[]): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const r of rows) if (r.key.trim()) out[r.key.trim()] = r.secret ? SECRET_PREFIX + r.value : r.value
-  return out
-}
-
-function EnvRowsEditor({ rows, onChange, secretNames, keyPlaceholder }: {
-  rows: EnvRow[]; onChange: (rows: EnvRow[]) => void; secretNames: string[]; keyPlaceholder: string
-}) {
+function EnvRowsEditor({ rows, onChange, secretNames, keyPlaceholder }: { rows: EnvRow[]; onChange: (rows: EnvRow[]) => void; secretNames: string[]; keyPlaceholder: string }) {
   const setAt = (i: number, patch: Partial<EnvRow>) => onChange(rows.map((r, j) => j === i ? { ...r, ...patch } : r))
-  return (
-    <>
-      {rows.map((r, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <Input className="w-56 font-mono text-xs" value={r.key} onChange={e => setAt(i, { key: e.target.value })} placeholder={keyPlaceholder} />
-          {r.secret ? (
-            <select className="flex-1 border rounded-md h-9 px-2 bg-background text-sm" value={r.value} onChange={e => setAt(i, { value: e.target.value })}>
-              <option value="">— pick secret —</option>
-              {secretNames.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          ) : (
-            <Input className="flex-1 font-mono text-xs" value={r.value} onChange={e => setAt(i, { value: e.target.value })} />
-          )}
-          <label className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
-            <input type="checkbox" checked={r.secret} onChange={e => setAt(i, { secret: e.target.checked, value: '' })} />secret
-          </label>
-          <Button size="sm" variant="ghost" onClick={() => onChange(rows.filter((_, j) => j !== i))}><X className="h-4 w-4" /></Button>
-        </div>
-      ))}
-      <Button size="sm" variant="secondary" onClick={() => onChange([...rows, { key: '', value: '', secret: false }])}>Add env var</Button>
-    </>
-  )
+  return <div className="space-y-2">{rows.map((r, i) => <div key={i} className="grid gap-2 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(150px,0.75fr)_minmax(180px,1fr)_auto_auto] sm:items-center">
+    <Input className="font-mono text-xs" value={r.key} onChange={e => setAt(i, { key: e.target.value })} placeholder={keyPlaceholder} aria-label="Environment variable name" />
+    {r.secret ? <select className="select-field" value={r.value} onChange={e => setAt(i, { value: e.target.value })} aria-label="Secret reference"><option value="">Choose secret…</option>{secretNames.map(n => <option key={n} value={n}>{n}</option>)}</select> : <Input className="font-mono text-xs" value={r.value} onChange={e => setAt(i, { value: e.target.value })} placeholder="Value" aria-label="Environment variable value" />}
+    <label className="flex min-h-9 cursor-pointer items-center gap-2 text-xs font-semibold text-muted-foreground"><input type="checkbox" checked={r.secret} onChange={e => setAt(i, { secret: e.target.checked, value: '' })} /> Secret</label>
+    <Button size="icon" variant="ghost" className="h-9 w-9 text-muted-foreground hover:text-destructive" onClick={() => onChange(rows.filter((_, j) => j !== i))} aria-label="Remove environment variable"><X className="h-4 w-4" /></Button>
+  </div>)}<Button size="sm" variant="outline" onClick={() => onChange([...rows, { key: '', value: '', secret: false }])}><Plus className="h-3.5 w-3.5" /> Add variable</Button></div>
 }
 
-export function ProfileEditor({ profile, profiles, servers, secretNames, onClose, onSaved }: {
-  profile: ProfileRow; profiles: ProfileRow[]; servers: string[]; secretNames: string[]
-  onClose: () => void; onSaved: () => void
-}) {
-  const [launcher, setLauncher] = useState(profile.launcher ?? '')
-  const [skipPermissions, setSkipPermissions] = useState(profile.skipPermissions)
-  const [sharedSessions, setSharedSessions] = useState(profile.sharedSessions)
-  const [env, setEnv] = useState<EnvRow[]>(toEnvRows(profile.env))
-  const seeded = Object.keys(profile.settingsEnv).length ? profile.settingsEnv : profile.liveSettingsEnv
-  const [pform, setPform] = useState(() => splitProviderEnv(seeded).form)
-  const [padv, setPadv] = useState<EnvRow[]>(() => toEnvRows(splitProviderEnv(seeded).advanced))
-  const [links, setLinks] = useState<KvRow[]>(Object.entries(profile.links).map(([key, value]) => ({ key, value })))
-  const [mcp, setMcp] = useState<string[]>(profile.mcpNames)
-  const [saving, setSaving] = useState(false)
-
+export function ProfileEditor({ profile, profiles, servers, secretNames, onClose, onSaved }: { profile: ProfileRow; profiles: ProfileRow[]; servers: string[]; secretNames: string[]; onClose: () => void; onSaved: () => void }) {
+  const [tab, setTab] = useState<Tab>('runtime'); const [launcher, setLauncher] = useState(profile.launcher ?? '')
+  const [skipPermissions, setSkipPermissions] = useState(profile.skipPermissions); const [sharedSessions, setSharedSessions] = useState(profile.sharedSessions)
+  const [env, setEnv] = useState<EnvRow[]>(toEnvRows(profile.env)); const seeded = Object.keys(profile.settingsEnv).length ? profile.settingsEnv : profile.liveSettingsEnv
+  const [pform, setPform] = useState(() => splitProviderEnv(seeded).form); const [padv, setPadv] = useState<EnvRow[]>(() => toEnvRows(splitProviderEnv(seeded).advanced))
+  const [links, setLinks] = useState<KvRow[]>(Object.entries(profile.links).map(([key, value]) => ({ key, value }))); const [mcp, setMcp] = useState<string[]>(profile.mcpNames); const [saving, setSaving] = useState(false)
   const setLinkAt = (i: number, patch: Partial<KvRow>) => setLinks(links.map((r, j) => j === i ? { ...r, ...patch } : r))
+  const shareFromHub = (key: 'skills' | 'commands') => setLinks(links.some(r => r.key === key) ? links.map(r => r.key === key ? { ...r, value: 'hub' } : r) : [...links, { key, value: 'hub' }])
+  const save = async () => { for (const r of [...env, ...padv]) if (r.secret && !r.value) { toast.error(`Pick a secret for ${r.key || 'environment variable'}`); return } setSaving(true); try { const linksObj: Record<string, string> = {}; for (const r of links) if (r.key.trim()) linksObj[r.key.trim()] = r.value; await api.patchProfile(profile.name, { env: fromEnvRows(env), settingsEnv: profile.agent === 'claude' ? mergeProviderEnv(pform, fromEnvRows(padv)) : undefined, links: linksObj, launcher: launcher.trim() || null, skipPermissions: launcher.trim() ? skipPermissions : false, sharedSessions }); for (const s of mcp.filter(s => !profile.mcpNames.includes(s))) await api.addMcp({ name: s, targets: [profile.name] }); for (const s of profile.mcpNames.filter(s => !mcp.includes(s))) await api.rmMcp(s, [profile.name]); toast.success(`Saved ${profile.name}`); onSaved() } catch (e: any) { toast.error(e.message) } finally { setSaving(false) } }
+  const tabs: { id: Tab; label: string; icon: typeof Terminal }[] = [{ id: 'runtime', label: 'Runtime', icon: Terminal }, ...(profile.agent === 'claude' ? [{ id: 'provider' as const, label: 'Provider', icon: Settings2 }] : []), { id: 'connections', label: 'Connections', icon: Link2 }]
 
-  const save = async () => {
-    for (const r of [...env, ...padv]) if (r.secret && !r.value) { toast.error(`pick a secret for ${r.key || 'env var'}`); return }
-    setSaving(true)
-    try {
-      const linksObj: Record<string, string> = {}
-      for (const r of links) if (r.key.trim()) linksObj[r.key.trim()] = r.value
-      await api.patchProfile(profile.name, {
-        env: fromEnvRows(env), settingsEnv: profile.agent === 'claude' ? mergeProviderEnv(pform, fromEnvRows(padv)) : undefined,
-        links: linksObj, launcher: launcher.trim() || null,
-        skipPermissions: launcher.trim() ? skipPermissions : false,
-        sharedSessions,
-      })
-      for (const s of mcp.filter(s => !profile.mcpNames.includes(s))) await api.addMcp({ name: s, targets: [profile.name] })
-      for (const s of profile.mcpNames.filter(s => !mcp.includes(s))) await api.rmMcp(s, [profile.name])
-      toast.success(`Saved ${profile.name}`)
-      onSaved()
-    } catch (e: any) { toast.error(e.message) } finally { setSaving(false) }
-  }
+  return <Dialog open onOpenChange={o => { if (!o) onClose() }}><DialogContent className="max-w-4xl p-0 gap-0 overflow-hidden"><DialogHeader className="border-b px-5 py-5 sm:px-7"><div className="flex flex-wrap items-center gap-2"><DialogTitle>Configure {profile.name}</DialogTitle><StatusPill tone={profile.agent === 'codex' ? 'info' : 'neutral'}>{profile.agent}</StatusPill></div><p className="text-sm text-muted-foreground">Changes update manifest, then apply managed files and connections.</p></DialogHeader>
+    <div className="flex overflow-x-auto border-b bg-muted/30 px-3 sm:px-6" role="tablist">{tabs.map(({ id, label, icon: Icon }) => <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={cn('relative flex min-h-12 items-center gap-2 px-4 text-xs font-bold text-muted-foreground transition-colors after:absolute after:inset-x-3 after:bottom-0 after:h-0.5', tab === id ? 'text-foreground after:bg-primary' : 'hover:text-foreground')}><Icon className="h-3.5 w-3.5" />{label}</button>)}</div>
+    <div className="max-h-[57dvh] overflow-y-auto px-5 py-6 sm:px-7 sm:py-7">
+      {tab === 'runtime' && <div className="space-y-8"><section><SectionTitle icon={Terminal} title="Launcher" description="Shell function used to open this profile." /><div className="max-w-xl"><Label className="field-label">Function name</Label><Input value={launcher} onChange={e => setLauncher(e.target.value)} placeholder={`${profile.agent === 'codex' ? 'cx' : 'cl'}-work (empty = no launcher)`} /></div>
+        <div className={cn('mt-4 rounded-xl border p-4', skipPermissions ? 'border-destructive/30 bg-destructive/5' : 'bg-muted/25', !launcher.trim() && 'opacity-55')}><div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2 text-sm font-bold"><ShieldAlert className={cn('h-4 w-4', skipPermissions && 'text-destructive')} /> Skip permission prompts</div><p className="mt-1.5 max-w-2xl font-mono text-[0.68rem] leading-5 text-muted-foreground">{profile.agent === 'codex' ? '--dangerously-bypass-approvals-and-sandbox' : '--dangerously-skip-permissions'}</p></div><Switch checked={skipPermissions} disabled={!launcher.trim()} onCheckedChange={setSkipPermissions} aria-label="Skip all permission prompts" /></div>{skipPermissions && launcher.trim() && <p className="mt-3 border-t border-destructive/20 pt-3 text-xs font-semibold text-destructive">Bypasses every confirmation. Enable only for fully trusted profiles.</p>}</div>
+      </section><section><SectionTitle icon={History} title="Session history" description="Choose whether profiles using same agent can resume each other’s project sessions." /><div className="flex items-start justify-between gap-4 rounded-xl border bg-muted/25 p-4"><div><p className="text-sm font-bold">Share session pool</p><p className="mt-1.5 max-w-2xl text-xs leading-5 text-muted-foreground">First enable migrates existing {profile.agent === 'codex' ? 'sessions' : 'projects, todos, and shell snapshots'} into shared pool with backup.{profile.agent === 'codex' ? ' Resume from another profile with cx-<name> resume or resume --last in same project.' : ''}</p></div><Switch checked={sharedSessions} onCheckedChange={setSharedSessions} aria-label="Share session history" /></div></section>
+      <section><SectionTitle icon={Settings2} title="Launcher environment" description="Variables exported only when managed shell function runs." /><EnvRowsEditor rows={env} onChange={setEnv} secretNames={secretNames} keyPlaceholder={profile.agent === 'codex' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} /></section></div>}
 
-  return (
-    <Dialog open onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Edit {profile.name}</DialogTitle></DialogHeader>
-        <div className="space-y-5">
-          <div className="space-y-1.5">
-            <Label>Launcher function</Label>
-            <Input value={launcher} onChange={e => setLauncher(e.target.value)} placeholder={`${profile.agent === 'codex' ? 'cx' : 'cl'}-work (empty = no launcher)`} />
-          </div>
+      {tab === 'provider' && profile.agent === 'claude' && <div className="space-y-8"><section><SectionTitle icon={Settings2} title="Request provider" description="Destination and model mapping written into settings.json. Secret tokens resolve during apply." /><ProviderForm form={pform} onChange={setPform} secretNames={secretNames} copySources={profiles.filter(p => p.name !== profile.name).map(p => ({ name: p.name, env: Object.keys(p.settingsEnv).length ? p.settingsEnv : p.liveSettingsEnv })).filter(s => s.env.ANTHROPIC_BASE_URL)} /></section><section className="border-t pt-7"><SectionTitle icon={Settings2} title="Other settings environment" description="Advanced settings.json variables outside provider configuration." /><EnvRowsEditor rows={padv} onChange={setPadv} secretNames={secretNames} keyPlaceholder="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" /></section></div>}
 
-          <div className="space-y-1.5">
-            <label className={cn('flex items-center gap-2 text-sm', !launcher.trim() && 'opacity-50')}>
-              <input type="checkbox" checked={skipPermissions} disabled={!launcher.trim()}
-                onChange={e => setSkipPermissions(e.target.checked)} />
-              Skip all permission prompts (<span className="font-mono text-xs">{profile.agent === 'codex' ? '--dangerously-bypass-approvals-and-sandbox' : '--dangerously-skip-permissions'}</span>)
-            </label>
-            {!launcher.trim()
-              ? <p className="text-xs text-muted-foreground">No launcher — plain <span className="font-mono">{profile.agent}</span> won't use this managed flag.</p>
-              : skipPermissions && <p className="text-xs text-red-600 dark:text-red-400">⚠ Bypasses every confirmation — use only for profiles you fully trust.</p>}
-          </div>
+      {tab === 'connections' && <div className="space-y-8"><section><SectionTitle icon={Boxes} title="MCP servers" description="Tools available to this profile." />{servers.length ? <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{servers.map(s => <label key={s} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors', mcp.includes(s) ? 'border-primary/35 bg-primary/5' : 'bg-card hover:bg-muted/40')}><input type="checkbox" checked={mcp.includes(s)} onChange={e => setMcp(e.target.checked ? [...mcp, s] : mcp.filter(x => x !== s))} /><span className="truncate font-mono text-xs font-bold">{s}</span></label>)}</div> : <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">No servers in manifest. Add one from MCP page.</div>}</section>
+      <section><SectionTitle icon={Link2} title="Managed links" description={`Share profile assets from hub. ${profile.agent === 'codex' ? 'Commands are exposed through Codex prompts/.' : ''}`} /><div className="mb-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => shareFromHub('skills')}>Share hub skills</Button><Button size="sm" variant="outline" onClick={() => shareFromHub('commands')}>Share hub commands</Button></div><div className="space-y-2">{links.map((r, i) => <div key={i} className="grid gap-2 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[0.7fr_1fr_auto]"><Input className="font-mono text-xs" value={r.key} onChange={e => setLinkAt(i, { key: e.target.value })} placeholder="skills" aria-label="Link name" /><Input className="font-mono text-xs" value={r.value} onChange={e => setLinkAt(i, { value: e.target.value })} placeholder="hub or a path" aria-label="Link destination" /><Button size="icon" variant="ghost" className="h-9 w-9 text-muted-foreground hover:text-destructive" onClick={() => setLinks(links.filter((_, j) => j !== i))} aria-label="Remove link"><X className="h-4 w-4" /></Button></div>)}<Button size="sm" variant="outline" onClick={() => setLinks([...links, { key: '', value: '' }])}><Plus className="h-3.5 w-3.5" /> Add custom link</Button></div></section></div>}
+    </div>
+    <DialogFooter className="m-0 border-t bg-background px-5 py-4 sm:px-7"><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save & apply'}</Button></DialogFooter>
+  </DialogContent></Dialog>
+}
 
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={sharedSessions} onChange={e => setSharedSessions(e.target.checked)} />
-              Share session history (pool <span className="font-mono text-xs">{profile.agent === 'codex' ? 'sessions' : 'projects / todos / shell-snapshots'}</span> with other shared profiles)
-            </label>
-            <p className="text-xs text-muted-foreground">
-              First enable migrates this profile's existing sessions into the shared pool (a backup is taken).
-              {profile.agent === 'codex' ? ' Resume from another profile with cx-<name> resume or resume --last in the same project.' : ''}
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Launcher env (exported by the shell function)</Label>
-            <EnvRowsEditor rows={env} onChange={setEnv} secretNames={secretNames} keyPlaceholder={profile.agent === 'codex' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} />
-          </div>
-
-          {profile.agent === 'claude' && <div className="space-y-1.5">
-            <Label>Provider</Label>
-            <p className="text-xs text-muted-foreground">Where this profile's Claude Code sends requests — written into settings.json. Secret tokens resolve from the keychain on apply.</p>
-            <ProviderForm form={pform} onChange={setPform} secretNames={secretNames}
-              copySources={profiles.filter(p => p.name !== profile.name)
-                .map(p => ({ name: p.name, env: Object.keys(p.settingsEnv).length ? p.settingsEnv : p.liveSettingsEnv }))
-                .filter(s => s.env.ANTHROPIC_BASE_URL)} />
-            <details className="pt-1">
-              <summary className="text-xs text-muted-foreground cursor-pointer select-none">Advanced — other settings.json env vars ({padv.length})</summary>
-              <div className="space-y-1.5 pt-2">
-                <EnvRowsEditor rows={padv} onChange={setPadv} secretNames={secretNames} keyPlaceholder="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" />
-              </div>
-            </details>
-          </div>}
-
-          <div className="space-y-1.5">
-            <Label>Links</Label>
-            {links.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Input className="w-56 font-mono text-xs" value={r.key} onChange={e => setLinkAt(i, { key: e.target.value })} placeholder="skills" />
-                <Input className="flex-1 font-mono text-xs" value={r.value} onChange={e => setLinkAt(i, { value: e.target.value })} placeholder="hub or a path" />
-                <Button size="sm" variant="ghost" onClick={() => setLinks(links.filter((_, j) => j !== i))}><X className="h-4 w-4" /></Button>
-              </div>
-            ))}
-            <Button size="sm" variant="secondary" onClick={() => setLinks([...links, { key: '', value: '' }])}>Add link</Button>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>MCP servers</Label>
-            <div className="grid grid-cols-2 gap-1.5">
-              {servers.map(s => (
-                <label key={s} className="flex items-center gap-2 text-sm font-mono">
-                  <input type="checkbox" checked={mcp.includes(s)}
-                    onChange={e => setMcp(e.target.checked ? [...mcp, s] : mcp.filter(x => x !== s))} />{s}
-                </label>
-              ))}
-              {servers.length === 0 && <div className="text-sm text-muted-foreground">No servers in manifest.</div>}
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save & apply'}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
+function SectionTitle({ icon: Icon, title, description }: { icon: typeof Terminal; title: string; description: string }) {
+  return <div className="mb-4 flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted"><Icon className="h-4 w-4 text-primary" /></span><div><h3 className="text-sm font-extrabold">{title}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div></div>
 }

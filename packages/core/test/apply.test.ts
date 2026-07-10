@@ -65,6 +65,52 @@ describe('planApply + executeApply', () => {
       { backupRoot: join(home, 'b'), stamp: 't3' })
     expect(planApply(manifest(), await discoverProfiles(home), p)).toEqual([])
   })
+
+  it('migrates existing Codex skills and commands into a Claude hub safely', async () => {
+    const codex = join(home, '.codex')
+    await mkdir(join(codex, 'skills', 'codex-only'), { recursive: true })
+    await mkdir(join(codex, 'prompts'), { recursive: true })
+    await writeFile(join(codex, 'config.toml'), '')
+    await writeFile(join(codex, 'skills', 'codex-only', 'SKILL.md'), '# codex skill')
+    await writeFile(join(codex, 'prompts', 'review.md'), '# review prompt')
+    await mkdir(join(home, '.claude', 'skills', 'claude-only'), { recursive: true })
+    await mkdir(join(home, '.claude', 'commands'), { recursive: true })
+    await writeFile(join(home, '.claude', 'skills', 'claude-only', 'SKILL.md'), '# claude skill')
+    await writeFile(join(home, '.claude', 'commands', 'ship.md'), '# ship command')
+
+    const m: Manifest = {
+      version: 1, hub: 'default', mcpServers: {},
+      profiles: [
+        { agent: 'claude', name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: false },
+        { agent: 'codex', name: 'codex', dir: '{home}/.codex', launcher: 'cx-def', auth: 'oauth', env: {}, settingsEnv: {}, links: { skills: 'hub', commands: 'hub' }, mcp: [], skipPermissions: false, sharedSessions: false },
+      ],
+    }
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const actions = planApply(m, await discoverProfiles(home), p)
+    expect(actions).toContainEqual({ kind: 'link', from: join(codex, 'skills'), to: join(home, '.claude', 'skills') })
+    expect(actions).toContainEqual({ kind: 'link', from: join(codex, 'prompts'), to: join(home, '.claude', 'commands') })
+
+    await executeApply(actions, { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 'links' })
+    expect((await lstat(join(codex, 'skills'))).isSymbolicLink()).toBe(true)
+    expect((await lstat(join(codex, 'prompts'))).isSymbolicLink()).toBe(true)
+    expect(existsSync(join(home, '.claude', 'skills', 'claude-only', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(home, '.claude', 'skills', 'codex-only', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(home, '.claude', 'commands', 'ship.md'))).toBe(true)
+    expect(existsSync(join(home, '.claude', 'commands', 'review.md'))).toBe(true)
+    expect(existsSync(join(home, '.ccprofiles', 'backups', 'links'))).toBe(true)
+
+    const live = await discoverProfiles(home)
+    expect(live.find(x => x.agent === 'codex')?.links.commands).toBe(join(home, '.claude', 'commands'))
+    expect(planApply(m, live, p)).toEqual([])
+  })
+
+  it('rejects a link whose target contains its source', async () => {
+    const m = manifest()
+    m.profiles[1].links = { skills: '{home}/.claude-new' }
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const live = await discoverProfiles(home)
+    expect(() => planApply(m, live, p)).toThrow(/unsafe link topology/)
+  })
 })
 
 describe('settingsEnv apply', () => {

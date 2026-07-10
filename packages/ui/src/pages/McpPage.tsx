@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Boxes, Plus, RefreshCw, Server } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
@@ -6,73 +7,26 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/sonner'
 import { api } from '@/lib/api'
+import { EmptyState, LoadingState, PageHeader, StatusPill } from '@/components/Page'
 
 type Mcp = { servers: string[]; profiles: { name: string; has: string[] }[] }
-
 export function McpPage() {
-  const [data, setData] = useState<Mcp | null>(null)
-  const [open, setOpen] = useState(false)
-  const [f, setF] = useState({ name: '', command: 'npx', args: '' })
-  const [from, setFrom] = useState('')
+  const [data, setData] = useState<Mcp | null>(null); const [open, setOpen] = useState(false)
+  const [f, setF] = useState({ name: '', command: 'npx', args: '' }); const [from, setFrom] = useState(''); const [busy, setBusy] = useState('')
   const load = async () => { try { setData(await api.mcp()) } catch (e: any) { toast.error(e.message) } }
   useEffect(() => { load() }, [])
-  if (!data) return null
+  const toggle = async (server: string, profile: string, on: boolean) => { const key = `${server}:${profile}`; setBusy(key); try { on ? await api.addMcp({ name: server, targets: [profile] }) : await api.rmMcp(server, [profile]); await load() } catch (e: any) { toast.error(e.message) } finally { setBusy('') } }
 
-  const toggle = async (server: string, profile: string, on: boolean) => {
-    try { on ? await api.addMcp({ name: server, targets: [profile] }) : await api.rmMcp(server, [profile]); await load() }
-    catch (e: any) { toast.error(e.message) }
-  }
+  const addDialog = <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button><Plus className="h-4 w-4" /> Add server</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>Add MCP server</DialogTitle><p className="text-sm leading-6 text-muted-foreground">Register one server across every managed profile. Fine-tune access from matrix afterward.</p></DialogHeader><div className="space-y-4"><div><Label className="field-label">Name</Label><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="playwright" autoFocus /></div><div><Label className="field-label">Command</Label><Input className="font-mono" value={f.command} onChange={e => setF({ ...f, command: e.target.value })} /></div><div><Label className="field-label">Arguments <span className="normal-case tracking-normal">(comma-separated)</span></Label><Input className="font-mono" value={f.args} onChange={e => setF({ ...f, args: e.target.value })} placeholder="-y,@playwright/mcp@latest" /></div></div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button disabled={!f.name.trim() || !f.command.trim()} onClick={async () => { try { await api.addMcp({ name: f.name.trim(), command: f.command.trim(), args: f.args ? f.args.split(',').map(a => a.trim()).filter(Boolean) : [], targets: 'all' }); toast.success(`Added ${f.name.trim()}`); setOpen(false); setF({ name: '', command: 'npx', args: '' }); await load() } catch (e: any) { toast.error(e.message) } }}>Add to all profiles</Button></DialogFooter></DialogContent></Dialog>
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold">MCP servers</h1>
-        <div className="flex gap-2 items-center">
-          <select className="border rounded-md h-9 px-2 bg-background text-sm" value={from} onChange={e => setFrom(e.target.value)}>
-            <option value="">sync from…</option>
-            {data.profiles.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-          </select>
-          <Button variant="secondary" disabled={!from} onClick={async () => {
-            try { await api.syncMcp(from, 'all'); toast.success(`Synced from ${from}`); await load() } catch (e: any) { toast.error(e.message) }
-          }}>Sync → all</Button>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button>Add server</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add MCP server</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5"><Label>Name</Label><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="shadcn" /></div>
-                <div className="space-y-1.5"><Label>Command</Label><Input value={f.command} onChange={e => setF({ ...f, command: e.target.value })} /></div>
-                <div className="space-y-1.5"><Label>Args (comma-separated)</Label><Input value={f.args} onChange={e => setF({ ...f, args: e.target.value })} placeholder="-y,@playwright/mcp@latest" /></div>
-              </div>
-              <DialogFooter><Button onClick={async () => {
-                try { await api.addMcp({ name: f.name, command: f.command, args: f.args ? f.args.split(',') : [], targets: 'all' }); toast.success(`Added ${f.name}`); setOpen(false); setF({ name: '', command: 'npx', args: '' }); await load() }
-                catch (e: any) { toast.error(e.message) }
-              }}>Add to all</Button></DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-      <div className="overflow-x-auto border rounded-lg">
-        <table className="text-sm border-collapse w-full">
-          <thead><tr className="border-b">
-            <th className="text-left p-3 font-medium">Server</th>
-            {data.profiles.map(p => <th key={p.name} className="p-3 text-center font-medium">{p.name}</th>)}
-          </tr></thead>
-          <tbody>
-            {data.servers.map(s => (
-              <tr key={s} className="border-b last:border-0">
-                <td className="p-3 font-mono">{s}</td>
-                {data.profiles.map(p => (
-                  <td key={p.name} className="p-3 text-center">
-                    <Switch checked={p.has.includes(s)} onCheckedChange={on => toggle(s, p.name, on)} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {data.servers.length === 0 && <tr><td className="p-3 text-muted-foreground" colSpan={data.profiles.length + 1}>No MCP servers yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
+  return <>
+    <PageHeader eyebrow="Tool access" title="MCP servers" description="See exactly which tools each profile can reach. Toggle assignments without editing configuration files." actions={<>{data && <StatusPill tone="info">{data.servers.length} servers</StatusPill>}{addDialog}</>} />
+    {!data ? <LoadingState label="Loading MCP assignments" /> : data.servers.length === 0 ? <EmptyState icon={Boxes} title="No MCP servers" description="Add a server once, then choose which profiles can use it." action={<Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Add server</Button>} /> : <div className="space-y-5">
+      <section className="surface-flat flex flex-col gap-3 p-4 sm:flex-row sm:items-center"><div className="flex flex-1 items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-muted"><RefreshCw className="h-4 w-4" /></span><div><p className="text-sm font-bold">Mirror one profile’s toolset</p><p className="text-xs text-muted-foreground">Replace assignments across all profiles.</p></div></div><select className="select-field sm:w-52" value={from} onChange={e => setFrom(e.target.value)} aria-label="Source profile"><option value="">Choose source…</option>{data.profiles.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}</select><Button variant="outline" disabled={!from || busy === 'sync'} onClick={async () => { setBusy('sync'); try { await api.syncMcp(from, 'all'); toast.success(`Synced from ${from}`); await load() } catch (e: any) { toast.error(e.message) } finally { setBusy('') } }}>{busy === 'sync' ? 'Syncing…' : 'Sync to all'}</Button></section>
+
+      <div className="hidden overflow-x-auto rounded-xl border bg-card md:block"><table className="w-full border-collapse text-sm"><thead><tr className="border-b bg-muted/35"><th className="sticky left-0 z-10 min-w-48 bg-muted px-5 py-3 text-left text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">Server</th>{data.profiles.map(p => <th key={p.name} className="min-w-32 px-4 py-3 text-center text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">{p.name}</th>)}</tr></thead><tbody>{data.servers.map(s => <tr key={s} className="border-b last:border-0 hover:bg-muted/20"><td className="sticky left-0 bg-card px-5 py-4"><span className="flex items-center gap-2 font-mono text-xs font-bold"><Server className="h-3.5 w-3.5 text-primary" />{s}</span></td>{data.profiles.map(p => { const key = `${s}:${p.name}`; return <td key={p.name} className="px-4 py-4 text-center"><Switch checked={p.has.includes(s)} disabled={busy === key} onCheckedChange={on => toggle(s, p.name, on)} aria-label={`${p.has.includes(s) ? 'Disable' : 'Enable'} ${s} for ${p.name}`} /></td> })}</tr>)}</tbody></table></div>
+
+      <div className="space-y-3 md:hidden">{data.servers.map(s => <section key={s} className="surface-flat overflow-hidden"><div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-3 font-mono text-sm font-bold"><Server className="h-4 w-4 text-primary" />{s}</div><div className="divide-y">{data.profiles.map(p => { const key = `${s}:${p.name}`; return <label key={p.name} className="flex items-center justify-between px-4 py-3 text-sm font-semibold"><span>{p.name}</span><Switch checked={p.has.includes(s)} disabled={busy === key} onCheckedChange={on => toggle(s, p.name, on)} /></label> })}</div></section>)}</div>
+    </div>}
+  </>
 }

