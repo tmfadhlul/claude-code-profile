@@ -14,7 +14,7 @@ function codexHub(): Manifest {
     version: 1, hub: 'codex', mcpServers: {},
     profiles: [{
       agent: 'codex', name: 'codex', dir: '{home}/.codex', launcher: null, auth: 'oauth',
-      env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: false,
+      env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: false, sharedPlugins: false,
     }],
   }
 }
