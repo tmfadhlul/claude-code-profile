@@ -26,7 +26,9 @@ function claudeRunner(): PluginRunner {
 function targets(m: Manifest, opts: { profile?: string; all?: boolean }): string[] {
   if (opts.all) return m.profiles.filter(p => (p.agent ?? 'claude') === 'claude').map(p => p.name)
   if (!opts.profile) throw new Error('specify --profile <name> or --all')
-  if (!m.profiles.some(p => p.name === opts.profile)) throw new Error(`unknown profile: ${opts.profile}`)
+  const pr = m.profiles.find(p => p.name === opts.profile)
+  if (!pr) throw new Error(`unknown profile: ${opts.profile}`)
+  if ((pr.agent ?? 'claude') === 'codex') throw new Error(`plugins are Claude-only; "${opts.profile}" is a codex profile`)
   return [opts.profile]
 }
 
@@ -91,7 +93,12 @@ export function registerPluginCommands(program: Command, ctx: CliContext): void 
       if (!src) throw new Error(`unknown profile: ${opts.from}`)
       const to = opts.all ? m.profiles.filter(p => p.name !== src.name && (p.agent ?? 'claude') === 'claude').map(p => p.name) : String(opts.to ?? '').split(',').filter(Boolean)
       if (!to.length) throw new Error('specify --to <p1,p2> or --all')
-      for (const t of to) { const pr = m.profiles.find(p => p.name === t); if (!pr) throw new Error(`unknown profile: ${t}`); pr.plugins = [...src.plugins] }
+      for (const t of to) {
+        const pr = m.profiles.find(p => p.name === t)
+        if (!pr) throw new Error(`unknown profile: ${t}`)
+        if ((pr.agent ?? 'claude') === 'codex') throw new Error(`plugins are Claude-only; "${t}" is a codex profile`)
+        pr.plugins = [...src.plugins]
+      }
       await saveManifest(ctx.manifestRoot, m)
       await reconcile(m, to)
     })

@@ -39,4 +39,14 @@ describe('plugins cli', () => {
     await run('adopt', '--yes')
     await expect(run('plugins', 'add', 'x@nope', '--profile', 'default')).rejects.toThrow(/marketplace/)
   })
+
+  it('add rejects an explicitly-named codex profile without mutating the manifest', async () => {
+    await mkdir(join(home, '.codex-x'), { recursive: true })
+    await writeFile(join(home, '.codex-x', 'config.toml'), 'model = "gpt-5-codex"\n')
+    await writeFile(join(home, '.codex-x', 'auth.json'), '{"tokens":{}}')
+    await run('adopt', '--yes')
+    await expect(run('plugins', 'add', 'ponytail@ponytail', '--marketplace', 'DietrichGebert/ponytail', '--profile', 'codex-x')).rejects.toThrow(/Claude-only/)
+    const m = await loadManifest(join(home, '.ccprofiles'))
+    expect(m.profiles.find(p => p.name === 'codex-x')!.plugins).toEqual([])
+  })
 })
