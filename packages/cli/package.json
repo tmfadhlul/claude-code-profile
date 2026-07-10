@@ -4,8 +4,8 @@
   "description": "Manage multiple Claude Code accounts/profiles — MCP drift sync, keychain secrets, and encrypted LAN replication between machines. CLI: ccprofiles (alias clp).",
   "type": "module",
   "bin": {
-    "ccprofiles": "./dist/index.js",
-    "clp": "./dist/index.js"
+    "ccprofiles": "dist/index.js",
+    "clp": "dist/index.js"
   },
   "files": [
     "dist",
