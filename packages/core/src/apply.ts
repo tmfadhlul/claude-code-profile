@@ -17,6 +17,9 @@ export type ApplyAction =
   | { kind: 'set-settings-env'; settingsPath: string; env: Record<string, string> }
   | { kind: 'share-session-dir'; from: string; to: string }
   | { kind: 'unshare-session-dir'; from: string; to: string }
+  | { kind: 'share-plugins-dir'; from: string; to: string }
+  | { kind: 'unshare-plugins-dir'; from: string; to: string }
+  | { kind: 'set-enabled-plugins'; settingsPath: string; enabledPlugins: Record<string, boolean> }
 
 function configPathFor(dir: string, home: string, agent: 'claude' | 'codex'): string {
   if (agent === 'codex') return join(dir, 'config.toml')
@@ -60,6 +63,13 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
   const actions: ApplyAction[] = []
   const hubProfile = m.profiles.find(x => x.name === m.hub) ?? null
 
+  const pluginUnion: Record<string, boolean> = {}
+  for (const pr of m.profiles) {
+    if ((pr.agent ?? 'claude') !== 'claude' || !pr.sharedPlugins) continue
+    const lp = live.find(l => l.dir === renderPath(pr.dir, p))
+    for (const [k, v] of Object.entries(lp?.enabledPlugins ?? {})) if (v) pluginUnion[k] = true
+  }
+
   for (const pr of m.profiles) {
     const agent = pr.agent ?? 'claude'
     const dir = renderPath(pr.dir, p)
@@ -96,6 +106,20 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
       else if (!pr.sharedSessions && linkedToPool) actions.push({ kind: 'unshare-session-dir', from, to })
     }
 
+    if (agent === 'claude') {
+      const pfrom = join(dir, 'plugins')
+      const pto = join(sharedRoot, 'plugins')
+      const pluginLinked = lp?.links['plugins'] === pto
+      if (pr.sharedPlugins && !pluginLinked) actions.push({ kind: 'share-plugins-dir', from: pfrom, to: pto })
+      else if (!pr.sharedPlugins && pluginLinked) actions.push({ kind: 'unshare-plugins-dir', from: pfrom, to: pto })
+
+      if (pr.sharedPlugins) {
+        const currentEnabled = lp?.enabledPlugins ?? {}
+        if (JSON.stringify(sortKeys(currentEnabled)) !== JSON.stringify(sortKeys(pluginUnion)))
+          actions.push({ kind: 'set-enabled-plugins', settingsPath: join(dir, 'settings.json'), enabledPlugins: pluginUnion })
+      }
+    }
+
     const senv = pr.settingsEnv ?? {} // literals in older tests may omit the field
     if (agent === 'claude' && Object.keys(senv).length > 0) {
       let desired = resolvedSettingsEnv?.[pr.name]
@@ -130,6 +154,7 @@ export async function executeApply(
     a.kind === 'set-mcp-servers' ? [a.configPath]
     : a.kind === 'rc-block' ? [a.rcFile]
     : a.kind === 'set-settings-env' ? [a.settingsPath]
+    : a.kind === 'set-enabled-plugins' ? [a.settingsPath]
     : [])
   let backupDir = touched.length ? await backupFiles(touched, opts.backupRoot, opts.stamp) : null
 
@@ -195,6 +220,30 @@ export async function executeApply(
       try { const st = await lstat(a.from); if (st.isSymbolicLink()) await unlink(a.from) } catch { /* absent */ }
       await mkdir(a.from, { recursive: true })
       if (existsSync(a.to)) await cp(a.to, a.from, { recursive: true, force: false, errorOnExist: false })
+    } else if (a.kind === 'share-plugins-dir') {
+      const poolExists = existsSync(a.to)
+      let st: Awaited<ReturnType<typeof lstat>> | null = null
+      try { st = await lstat(a.from) } catch { /* absent */ }
+      if (st && st.isSymbolicLink()) {
+        await unlink(a.from)
+      } else if (st) {
+        await backupTree(a.from, opts.backupRoot, opts.stamp)
+        if (!poolExists) { await mkdir(dirname(a.to), { recursive: true }); await cp(a.from, a.to, { recursive: true }) } // seed
+        await rm(a.from, { recursive: true, force: true })                                                             // adopt = no copy
+      }
+      if (!existsSync(a.to)) await mkdir(a.to, { recursive: true })
+      await mkdir(dirname(a.from), { recursive: true })
+      await symlink(a.to, a.from, process.platform === 'win32' ? 'junction' : 'dir')
+    } else if (a.kind === 'unshare-plugins-dir') {
+      try { const st = await lstat(a.from); if (st.isSymbolicLink()) await unlink(a.from) } catch { /* absent */ }
+      await mkdir(a.from, { recursive: true })
+      if (existsSync(a.to)) await cp(a.to, a.from, { recursive: true, force: false, errorOnExist: false })
+    } else if (a.kind === 'set-enabled-plugins') {
+      let cfg: Record<string, unknown> = {}
+      try { cfg = JSON.parse(await readFile(a.settingsPath, 'utf8')) } catch { /* new file */ }
+      cfg.enabledPlugins = a.enabledPlugins
+      await mkdir(dirname(a.settingsPath), { recursive: true })
+      await atomicWrite(a.settingsPath, JSON.stringify(cfg, null, 2))
     }
   }
   return { backupDir, performed }
@@ -209,5 +258,8 @@ function describe(a: ApplyAction): string {
     case 'set-settings-env': return `set settings env (${Object.keys(a.env).length}) in ${a.settingsPath}`
     case 'share-session-dir': return `share ${a.from} -> ${a.to}`
     case 'unshare-session-dir': return `unshare ${a.from} (seed from ${a.to})`
+    case 'share-plugins-dir': return `share plugins ${a.from} -> ${a.to}`
+    case 'unshare-plugins-dir': return `unshare plugins ${a.from} (seed from ${a.to})`
+    case 'set-enabled-plugins': return `set enabledPlugins (${Object.keys(a.enabledPlugins).length}) in ${a.settingsPath}`
   }
 }
