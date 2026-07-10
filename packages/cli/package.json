@@ -1,6 +1,6 @@
 {
   "name": "claude-account-sync",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Manage multiple Claude Code accounts/profiles — MCP drift sync, keychain secrets, and encrypted LAN replication between machines. CLI: ccprofiles (alias clp).",
   "type": "module",
   "bin": {
@@ -12,6 +12,10 @@
     "README.md"
   ],
   "license": "MIT",
+  "funding": {
+    "type": "individual",
+    "url": "https://ko-fi.com/teukufadh"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tmfadhlul/claude-code-profile.git",
@@ -34,7 +38,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "ccprofiles-core": "^0.5.0",
+    "ccprofiles-core": "^0.5.1",
     "commander": "^12.1.0"
   },
   "scripts": {

@@ -1,6 +1,6 @@
 {
   "name": "ccprofiles-core",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Core library for ccprofiles — discovery, manifest, secrets, apply, and LAN sync for Claude Code multi-account setups",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,6 +9,10 @@
     "dist"
   ],
   "license": "MIT",
+  "funding": {
+    "type": "individual",
+    "url": "https://ko-fi.com/teukufadh"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tmfadhlul/claude-code-profile.git",
