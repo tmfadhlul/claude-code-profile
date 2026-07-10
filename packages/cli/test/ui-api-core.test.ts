@@ -156,6 +156,13 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     const rows = (await callApi(ctx, 'GET', '/api/sessions'))._json
     expect(Array.isArray(rows)).toBe(true)
     expect(rows.some((r: any) => r.project && Array.isArray(r.sessions))).toBe(true)
+    const transcript = (await callApi(ctx, 'GET', '/api/sessions/claude/shared/s1'))._json
+    expect(transcript).toMatchObject({ id: 's1', agent: 'claude', project: '/tmp/proj' })
+    expect(transcript.messages).toMatchObject([{ role: 'user', text: 'hi there' }])
+  })
+  it('GET /api/sessions detail 404s for unknown or unsafe ids', async () => {
+    expect((await callApi(ctx, 'GET', '/api/sessions/claude/shared/missing'))._status).toBe(404)
+    expect((await callApi(ctx, 'GET', '/api/sessions/claude/shared/..%2Fsecret'))._status).toBe(404)
   })
   it('UI create/share/list works for Codex profiles', async () => {
     await callApi(ctx, 'POST', '/api/adopt')

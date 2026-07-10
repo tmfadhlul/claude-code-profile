@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { scanSessions } from '../src/sessions.js'
+import { readSessionTranscript, scanSessions } from '../src/sessions.js'
 
 let home: string
 beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'ccp-sess-')) })
@@ -85,5 +85,56 @@ describe('scanSessions', () => {
     })
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ agent: 'codex', scope: 'shared', project: '/tmp/shared-codex' })
+  })
+})
+
+describe('readSessionTranscript', () => {
+  it('reads visible Claude conversation and tool activity without system noise', async () => {
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    const dir = join(sharedRoot, 'projects', 'proj')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'chat-1.jsonl'),
+      '{"type":"user","cwd":"/tmp/project","timestamp":"2026-07-10T01:00:00Z","message":{"content":"build this"}}\n' +
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"I will inspect it."},{"type":"tool_use","name":"Read","input":{"file_path":"a.ts"}}]}}\n' +
+      '{"type":"user","message":{"content":[{"type":"tool_result","content":"file contents"}]}}\n' +
+      '{"type":"user","message":{"content":"<system-reminder>internal</system-reminder>"}}\n')
+
+    const transcript = await readSessionTranscript({ sharedRoot, profiles: [], agent: 'claude', scope: 'shared', id: 'chat-1' })
+    expect(transcript).toMatchObject({ id: 'chat-1', agent: 'claude', scope: 'shared', project: '/tmp/project' })
+    expect(transcript?.messages.map(m => [m.role, m.label, m.text])).toEqual([
+      ['user', null, 'build this'],
+      ['assistant', null, 'I will inspect it.'],
+      ['tool', 'Read', '{\n  "file_path": "a.ts"\n}'],
+      ['tool', 'Tool result', 'file contents'],
+    ])
+  })
+
+  it('reads Codex response messages, tool calls, and ignores duplicate event messages', async () => {
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    const dir = join(sharedRoot, 'sessions', '2026', '07', '10')
+    const id = '33333333-3333-4333-8333-333333333333'
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, `rollout-${id}.jsonl`),
+      `{"type":"session_meta","payload":{"id":"${id}","cwd":"/tmp/codex"}}\n` +
+      '{"type":"event_msg","payload":{"type":"user_message","message":"duplicate"}}\n' +
+      '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix it"}]}}\n' +
+      '{"type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\\"cmd\\":\\"npm test\\"}"}}\n' +
+      '{"type":"response_item","payload":{"type":"function_call_output","output":"all passed"}}\n' +
+      '{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}}\n')
+
+    const transcript = await readSessionTranscript({ sharedRoot, profiles: [], agent: 'codex', scope: 'shared', id })
+    expect(transcript).toMatchObject({ id, agent: 'codex', project: '/tmp/codex' })
+    expect(transcript?.messages.map(m => [m.role, m.label, m.text])).toEqual([
+      ['user', null, 'fix it'],
+      ['tool', 'shell', '{"cmd":"npm test"}'],
+      ['tool', 'Tool result', 'all passed'],
+      ['assistant', null, 'Done.'],
+    ])
+  })
+
+  it('rejects traversal-shaped session ids', async () => {
+    expect(await readSessionTranscript({
+      sharedRoot: join(home, '.ccprofiles', 'shared'), profiles: [], agent: 'claude', scope: 'shared', id: '../secret',
+    })).toBeNull()
   })
 })

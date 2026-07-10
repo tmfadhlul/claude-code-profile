@@ -32,6 +32,8 @@ export const api = {
   apply: () => req('POST', '/api/apply'),
   doctor: () => req('GET', '/api/doctor'),
   sessions: () => req('GET', '/api/sessions'),
+  sessionTranscript: (agent: 'claude' | 'codex', scope: string, id: string) =>
+    req('GET', `/api/sessions/${agent}/${encodeURIComponent(scope)}/${encodeURIComponent(id)}`),
   devices: () => req('GET', '/api/devices'),
   sync: (from: string, withSecrets: boolean) => req('POST', '/api/sync', { from, withSecrets }),
 }

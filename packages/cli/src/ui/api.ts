@@ -2,7 +2,7 @@ import {
   discoverProfiles, buildManifest, saveManifest, executeApply,
   ensureRootGitignore, loadManifest, loadDevices, fetchRemote, fetchSecrets,
   writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
-  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, liveProfileName, scanSessions, type Manifest,
+  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, liveProfileName, scanSessions, readSessionTranscript, type Manifest,
 } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -170,6 +170,20 @@ export function buildRoutes(ctx: CliContext): Route[] {
       profiles: live.map(lp => ({ name: liveProfileName(lp), dir: lp.dir, agent: lp.agent })),
     })
     sendJson(res, 200, rows)
+  })
+
+  add('GET', /^\/api\/sessions\/([^/]+)\/([^/]+)\/([^/]+)$/, async (mtch, _req, res) => {
+    if (mtch[1] !== 'claude' && mtch[1] !== 'codex') throw new HttpError(400, 'agent must be claude or codex')
+    const agent = mtch[1]
+    const scope = decodeURIComponent(mtch[2])
+    const id = decodeURIComponent(mtch[3])
+    const live = await discoverProfiles(ctx.home)
+    const transcript = await readSessionTranscript({
+      sharedRoot: join(ctx.manifestRoot, 'shared'), agent, scope, id,
+      profiles: live.map(lp => ({ name: liveProfileName(lp), dir: lp.dir, agent: lp.agent })),
+    })
+    if (!transcript) throw new HttpError(404, `session not found: ${id}`)
+    sendJson(res, 200, transcript)
   })
 
   add('GET', /^\/api\/status$/, async (_m, _req, res) => {
