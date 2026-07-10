@@ -1,11 +1,11 @@
-import { lstat, mkdir, readFile, symlink, unlink } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, rm, symlink, unlink } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { Manifest, McpServerDef } from './manifest.js'
 import type { LiveProfile } from './discovery.js'
 import { renderPath, type Platform } from './platform.js'
 import { renderRcBlock, upsertManagedBlock } from './rcblock.js'
-import { atomicWrite, backupFiles } from './fsutil.js'
+import { atomicWrite, backupFiles, backupTree } from './fsutil.js'
 
 export type ApplyAction =
   | { kind: 'set-mcp-servers'; configPath: string; servers: Record<string, McpServerDef> }
@@ -13,6 +13,8 @@ export type ApplyAction =
   | { kind: 'link'; from: string; to: string }
   | { kind: 'rc-block'; rcFile: string; block: string }
   | { kind: 'set-settings-env'; settingsPath: string; env: Record<string, string> }
+  | { kind: 'share-session-dir'; from: string; to: string }
+  | { kind: 'unshare-session-dir'; from: string; to: string }
 
 function configPathFor(dir: string, home: string): string {
   return dir === join(home, '.claude') ? join(home, '.claude.json') : join(dir, '.claude.json')
@@ -23,6 +25,7 @@ function sortKeys(o: Record<string, unknown>): Record<string, unknown> {
 }
 
 const SECRET_PREFIX = 'secret://'
+const SHARED_ENTRIES = ['projects', 'todos', 'shell-snapshots'] as const
 
 /** Resolve secret:// refs in every profile's settingsEnv. Throws on a missing secret. */
 export async function resolveSettingsEnv(
@@ -45,7 +48,7 @@ export async function resolveSettingsEnv(
   return out
 }
 
-export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolvedSettingsEnv?: Record<string, Record<string, string>>): ApplyAction[] {
+export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolvedSettingsEnv?: Record<string, Record<string, string>>, sharedRoot: string = join(p.home, '.ccprofiles', 'shared')): ApplyAction[] {
   const actions: ApplyAction[] = []
   const hubProfile = m.profiles.find(x => x.name === m.hub) ?? null
 
@@ -69,6 +72,14 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
       const from = join(dir, entry)
       if (lp?.links[entry] === to) continue
       actions.push({ kind: 'link', from, to })
+    }
+
+    for (const entry of SHARED_ENTRIES) {
+      const from = join(dir, entry)
+      const to = join(sharedRoot, entry)
+      const linkedToPool = lp?.links[entry] === to
+      if (pr.sharedSessions && !linkedToPool) actions.push({ kind: 'share-session-dir', from, to })
+      else if (!pr.sharedSessions && linkedToPool) actions.push({ kind: 'unshare-session-dir', from, to })
     }
 
     const senv = pr.settingsEnv ?? {} // literals in older tests may omit the field
@@ -139,6 +150,23 @@ export async function executeApply(
       cfg.env = a.env
       await mkdir(dirname(a.settingsPath), { recursive: true })
       await atomicWrite(a.settingsPath, JSON.stringify(cfg, null, 2))
+    } else if (a.kind === 'share-session-dir') {
+      await mkdir(a.to, { recursive: true })
+      let st: Awaited<ReturnType<typeof lstat>> | null = null
+      try { st = await lstat(a.from) } catch { /* absent */ }
+      if (st && !st.isSymbolicLink()) {
+        await backupTree(a.from, opts.backupRoot, opts.stamp)
+        await cp(a.from, a.to, { recursive: true, force: false, errorOnExist: false })
+        await rm(a.from, { recursive: true, force: true })
+      } else if (st && st.isSymbolicLink()) {
+        await unlink(a.from)
+      }
+      await mkdir(dirname(a.from), { recursive: true })
+      await symlink(a.to, a.from, process.platform === 'win32' ? 'junction' : 'dir')
+    } else if (a.kind === 'unshare-session-dir') {
+      try { const st = await lstat(a.from); if (st.isSymbolicLink()) await unlink(a.from) } catch { /* absent */ }
+      await mkdir(a.from, { recursive: true })
+      if (existsSync(a.to)) await cp(a.to, a.from, { recursive: true, force: false, errorOnExist: false })
     }
   }
   return { backupDir, performed }
@@ -151,5 +179,7 @@ function describe(a: ApplyAction): string {
     case 'link': return `link ${a.from} -> ${a.to}`
     case 'rc-block': return `update managed block in ${a.rcFile}`
     case 'set-settings-env': return `set settings env (${Object.keys(a.env).length}) in ${a.settingsPath}`
+    case 'share-session-dir': return `share ${a.from} -> ${a.to}`
+    case 'unshare-session-dir': return `unshare ${a.from} (seed from ${a.to})`
   }
 }
