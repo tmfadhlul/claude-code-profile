@@ -2,7 +2,7 @@ import {
   discoverProfiles, buildManifest, saveManifest, executeApply,
   ensureRootGitignore, loadManifest, loadDevices, fetchRemote, fetchSecrets,
   writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
-  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, type Manifest,
+  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, liveProfileName, type Manifest,
 } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,10 +13,6 @@ import { sendJson, readJson, HttpError, type Route } from './http.js'
 import { planActions, planActionsPreflight } from '../plan.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
-
-function profileName(dirName: string): string {
-  return dirName === '.claude' ? 'default' : dirName.slice('.claude-'.length)
-}
 
 export function buildRoutes(ctx: CliContext): Route[] {
   const routes: Route[] = []
@@ -76,12 +72,12 @@ export function buildRoutes(ctx: CliContext): Route[] {
     let manifest: Manifest | null = null
     if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) manifest = await loadManifest(ctx.manifestRoot)
     const rows = live.map(lp => {
-      const name = profileName(lp.dirName)
+      const name = liveProfileName(lp)
       const decl = manifest?.profiles.find(p => p.name === name) ?? null
       return {
-        name, dir: lp.dir, auth: decl?.auth ?? (lp.account ? 'oauth' : 'env'),
+        name, agent: decl?.agent ?? lp.agent, dir: lp.dir, auth: decl?.auth ?? (lp.account || lp.authenticated ? 'oauth' : 'env'),
         account: lp.account, mcp: Object.keys(lp.mcpServers).length,
-        launcher: decl?.launcher ?? (name === 'default' ? null : `cl-${name}`),
+        launcher: decl?.launcher ?? (lp.dirName === '.claude' || lp.dirName === '.codex' ? null : `${lp.agent === 'codex' ? 'cx' : 'cl'}-${name}`),
         adopted: !!decl,
         env: decl?.env ?? {}, links: decl?.links ?? {}, mcpNames: decl?.mcp ?? [],
         settingsEnv: decl?.settingsEnv ?? {}, liveSettingsEnv: lp.settingsEnv,
@@ -92,14 +88,18 @@ export function buildRoutes(ctx: CliContext): Route[] {
   })
 
   add('POST', /^\/api\/profiles$/, async (_m, req, res) => {
-    const { name, from } = await readJson<{ name: string; from?: string }>(req)
+    const { name, from, agent = 'claude' } = await readJson<{ name: string; from?: string; agent?: 'claude' | 'codex' }>(req)
     if (!name) throw new HttpError(400, 'name required')
+    if (agent !== 'claude' && agent !== 'codex') throw new HttpError(400, 'agent must be claude or codex')
+    const suffix = agent === 'codex' && name.startsWith('codex-') ? name.slice('codex-'.length) : name
+    if (!suffix) throw new HttpError(400, 'profile name must not be empty')
+    const profileName = agent === 'codex' ? `codex-${suffix}` : name
     const m = await mustManifest()
-    if (m.profiles.some(p => p.name === name)) throw new HttpError(409, `profile exists: ${name}`)
+    if (m.profiles.some(p => p.name === profileName)) throw new HttpError(409, `profile exists: ${profileName}`)
     const src = from ? m.profiles.find(p => p.name === from) : null
     if (from && !src) throw new HttpError(400, `unknown profile: ${from}`)
     m.profiles.push({
-      name, dir: `{home}/.claude-${name}`, launcher: `cl-${name}`, auth: 'env', env: {},
+      agent, name: profileName, dir: `{home}/.${agent}-${suffix}`, launcher: `${agent === 'codex' ? 'cx' : 'cl'}-${suffix}`, auth: 'env', env: {},
       links: src ? { ...src.links } : (m.hub ? { skills: 'hub', commands: 'hub' } : {}),
       mcp: src ? [...src.mcp] : [],
       settingsEnv: {},
@@ -109,7 +109,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)
     await applyAndReport(m)
-    sendJson(res, 200, { ok: true })
+    sendJson(res, 200, { ok: true, name: profileName })
   })
 
   add('PATCH', /^\/api\/profiles\/([^/]+)$/, async (mtch, req, res) => {
@@ -181,12 +181,12 @@ export function buildRoutes(ctx: CliContext): Route[] {
         const f = join(lp.dir, nm)
         try { if (lstatSync(f).isSymbolicLink() && !existsSync(f)) problems.push(`broken symlink: ${f} -> ${readlinkSync(f)}`) } catch { /* skip */ }
       }
-      const decl = man?.profiles.find(p => p.name === profileName(lp.dirName)) ?? null
-      for (const varName of KEY_VARS) {
+      const decl = man?.profiles.find(p => p.name === liveProfileName(lp)) ?? null
+      for (const varName of lp.agent === 'claude' ? KEY_VARS : []) {
         if (lp.settingsEnv[varName] && !decl?.settingsEnv[varName])
           problems.push(`plaintext token ${varName} in ${join(lp.dir, 'settings.json')} — adopt profile then run: secrets migrate`)
         if (decl?.settingsEnv[varName] && !decl.settingsEnv[varName].startsWith('secret://'))
-          problems.push(`plaintext token ${varName} in manifest for profile "${profileName(lp.dirName)}" — run: secrets migrate`)
+          problems.push(`plaintext token ${varName} in manifest for profile "${liveProfileName(lp)}" — run: secrets migrate`)
       }
     }
     if (existsSync(ctx.platform.rcFile)) {

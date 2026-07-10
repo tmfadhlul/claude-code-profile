@@ -6,9 +6,10 @@ import type { LiveProfile } from './discovery.js'
 import { renderPath, type Platform } from './platform.js'
 import { renderRcBlock, upsertManagedBlock } from './rcblock.js'
 import { atomicWrite, backupFiles, backupTree } from './fsutil.js'
+import { writeCodexMcpServers } from './codex.js'
 
 export type ApplyAction =
-  | { kind: 'set-mcp-servers'; configPath: string; servers: Record<string, McpServerDef> }
+  | { kind: 'set-mcp-servers'; agent: 'claude' | 'codex'; configPath: string; servers: Record<string, McpServerDef> }
   | { kind: 'create-profile-dir'; dir: string }
   | { kind: 'link'; from: string; to: string }
   | { kind: 'rc-block'; rcFile: string; block: string }
@@ -16,7 +17,8 @@ export type ApplyAction =
   | { kind: 'share-session-dir'; from: string; to: string }
   | { kind: 'unshare-session-dir'; from: string; to: string }
 
-function configPathFor(dir: string, home: string): string {
+function configPathFor(dir: string, home: string, agent: 'claude' | 'codex'): string {
+  if (agent === 'codex') return join(dir, 'config.toml')
   return dir === join(home, '.claude') ? join(home, '.claude.json') : join(dir, '.claude.json')
 }
 
@@ -25,7 +27,7 @@ function sortKeys(o: Record<string, unknown>): Record<string, unknown> {
 }
 
 const SECRET_PREFIX = 'secret://'
-const SHARED_ENTRIES = ['projects', 'todos', 'shell-snapshots'] as const
+const CLAUDE_SHARED_ENTRIES = ['projects', 'todos', 'shell-snapshots'] as const
 
 /** Resolve secret:// refs in every profile's settingsEnv. Throws on a missing secret. */
 export async function resolveSettingsEnv(
@@ -53,6 +55,7 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
   const hubProfile = m.profiles.find(x => x.name === m.hub) ?? null
 
   for (const pr of m.profiles) {
+    const agent = pr.agent ?? 'claude'
     const dir = renderPath(pr.dir, p)
     const lp = live.find(l => l.dir === dir) ?? null
     const desired: Record<string, McpServerDef> = {}
@@ -62,7 +65,7 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
 
     const current = lp?.mcpServers ?? null
     if (!current || JSON.stringify(sortKeys(current)) !== JSON.stringify(sortKeys(desired))) {
-      actions.push({ kind: 'set-mcp-servers', configPath: configPathFor(dir, p.home), servers: desired })
+      actions.push({ kind: 'set-mcp-servers', agent, configPath: configPathFor(dir, p.home, agent), servers: desired })
     }
 
     for (const [entry, target] of Object.entries(pr.links)) {
@@ -74,7 +77,8 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
       actions.push({ kind: 'link', from, to })
     }
 
-    for (const entry of SHARED_ENTRIES) {
+    const sharedEntries: readonly string[] = agent === 'codex' ? ['sessions'] : CLAUDE_SHARED_ENTRIES
+    for (const entry of sharedEntries) {
       const from = join(dir, entry)
       const to = join(sharedRoot, entry)
       const linkedToPool = lp?.links[entry] === to
@@ -83,7 +87,7 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
     }
 
     const senv = pr.settingsEnv ?? {} // literals in older tests may omit the field
-    if (Object.keys(senv).length > 0) {
+    if (agent === 'claude' && Object.keys(senv).length > 0) {
       let desired = resolvedSettingsEnv?.[pr.name]
       if (!desired) {
         if (Object.values(senv).some(v => v.startsWith(SECRET_PREFIX)))
@@ -123,6 +127,11 @@ export async function executeApply(
     if (a.kind === 'create-profile-dir') {
       await mkdir(a.dir, { recursive: true })
     } else if (a.kind === 'set-mcp-servers') {
+      if (a.agent === 'codex') {
+        await mkdir(dirname(a.configPath), { recursive: true })
+        await writeCodexMcpServers(a.configPath, a.servers)
+        continue
+      }
       let cfg: Record<string, unknown> = {}
       try { cfg = JSON.parse(await readFile(a.configPath, 'utf8')) } catch { /* new file */ }
       cfg.mcpServers = a.servers

@@ -43,15 +43,21 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
 
   program.command('create <name>').description('create a new profile')
     .option('--from <profile>', 'copy mcp list and links from an existing profile')
-    .action(async (name: string, opts: { from?: string }) => {
+    .option('--agent <agent>', 'agent to launch: claude or codex', 'claude')
+    .action(async (name: string, opts: { from?: string; agent: string }) => {
+      if (opts.agent !== 'claude' && opts.agent !== 'codex') throw new Error('--agent must be claude or codex')
+      const suffix = opts.agent === 'codex' && name.startsWith('codex-') ? name.slice('codex-'.length) : name
+      if (!suffix) throw new Error('profile name must not be empty')
+      const profileName = opts.agent === 'codex' ? `codex-${suffix}` : name
       const m = await requireManifest(ctx)
-      if (m.profiles.some(p => p.name === name)) throw new Error(`profile exists: ${name}`)
+      if (m.profiles.some(p => p.name === profileName)) throw new Error(`profile exists: ${profileName}`)
       const src = opts.from ? m.profiles.find(p => p.name === opts.from) : null
       if (opts.from && !src) throw new Error(`unknown profile: ${opts.from}`)
       m.profiles.push({
-        name,
-        dir: `{home}/.claude-${name}`,
-        launcher: `cl-${name}`,
+        agent: opts.agent,
+        name: profileName,
+        dir: `{home}/.${opts.agent}-${suffix}`,
+        launcher: `${opts.agent === 'codex' ? 'cx' : 'cl'}-${suffix}`,
         auth: 'env',
         env: {},
         links: src ? { ...src.links } : (m.hub ? { skills: 'hub', commands: 'hub' } : {}),
@@ -63,6 +69,6 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
       await saveManifest(ctx.manifestRoot, m)
       const actions = await planActions(ctx, m)
       await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp() })
-      console.log(`profile "${name}" created — launcher: cl-${name} (restart your shell)`)
+      console.log(`profile "${profileName}" created — launcher: ${opts.agent === 'codex' ? 'cx' : 'cl'}-${suffix} (restart your shell)`)
     })
 }

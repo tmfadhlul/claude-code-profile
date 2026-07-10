@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildProgram, makeContext } from '../src/context.js'
 import { rcFileFor } from './helpers.js'
+import { loadManifest } from 'ccprofiles-core'
 
 let home: string
 async function run(...args: string[]): Promise<string> {
@@ -35,5 +36,14 @@ describe('status/apply/create', () => {
     expect(rc).toContain('cl-work')
     const cfg = JSON.parse(await readFile(join(home, '.claude-work', '.claude.json'), 'utf8'))
     expect(Object.keys(cfg.mcpServers)).toEqual(['playwright'])
+  })
+  it('creates a Codex home and keeps its adopted profile name stable', async () => {
+    await run('create', 'work', '--agent', 'codex', '--from', 'default')
+    expect(existsSync(join(home, '.codex-work', 'config.toml'))).toBe(true)
+    const rc = await readFile(rcFileFor(home), 'utf8')
+    expect(rc).toContain('CODEX_HOME="$HOME/.codex-work" codex "$@"')
+    await run('snapshot')
+    const manifest = await loadManifest(join(home, '.ccprofiles'))
+    expect(manifest.profiles.find(p => p.dir === '{home}/.codex-work')).toMatchObject({ name: 'codex-work', agent: 'codex' })
   })
 })

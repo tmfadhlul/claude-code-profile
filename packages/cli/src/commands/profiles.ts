@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { discoverProfiles, buildManifest, saveManifest, loadManifest, preserveSecretRefs, ensureRootGitignore } from 'ccprofiles-core'
+import { discoverProfiles, liveProfileName, buildManifest, saveManifest, loadManifest, preserveSecretRefs, ensureRootGitignore } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -7,15 +7,16 @@ import type { CliContext } from '../context.js'
 import { KEY_VARS, secretsStore } from './secrets.js'
 
 export function registerProfileCommands(program: Command, ctx: CliContext): void {
-  program.command('list').description('list Claude Code profiles').action(async () => {
+  program.command('list').description('list Claude Code and Codex profiles').action(async () => {
     const live = await discoverProfiles(ctx.home)
     const rows = live.map(lp => ({
-      name: lp.dirName === '.claude' ? 'default' : lp.dirName.slice('.claude-'.length),
+      name: liveProfileName(lp),
+      agent: lp.agent,
       dir: lp.dir,
       account: lp.account ?? '-',
       mcp: Object.keys(lp.mcpServers).length,
     }))
-    for (const r of rows) console.log(`${r.name.padEnd(12)} ${String(r.mcp).padStart(3)} mcp  ${r.account.padEnd(28)} ${r.dir}`)
+    for (const r of rows) console.log(`${r.name.padEnd(16)} ${r.agent.padEnd(6)} ${String(r.mcp).padStart(3)} mcp  ${r.account.padEnd(28)} ${r.dir}`)
   })
 
   program.command('adopt').description('build manifest from live profiles')
@@ -50,9 +51,9 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
           if (lstatSync(f).isSymbolicLink() && !existsSync(f)) problems.push(`broken symlink: ${f} -> ${readlinkSync(f)}`)
         } catch { /* ignore */ }
       }
-      const pname = lp.dirName === '.claude' ? 'default' : lp.dirName.slice('.claude-'.length)
+      const pname = liveProfileName(lp)
       const decl = m?.profiles.find(p => p.name === pname) ?? null
-      for (const varName of KEY_VARS) {
+      for (const varName of lp.agent === 'claude' ? KEY_VARS : []) {
         if (lp.settingsEnv[varName] && !decl?.settingsEnv[varName])
           problems.push(`plaintext token ${varName} in ${join(lp.dir, 'settings.json')} — adopt profile then run: secrets migrate`)
         if (decl?.settingsEnv[varName] && !decl.settingsEnv[varName].startsWith('secret://'))

@@ -1,12 +1,12 @@
 # ccprofiles
 
-**Profile manager for [Claude Code](https://claude.com/claude-code) multi-account setups.**
+**Profile manager for Claude Code and OpenAI Codex multi-account setups.**
 
 Run Claude Code with several accounts — personal subscription, work OAuth, API key, alternative providers — each in its own `CLAUDE_CONFIG_DIR`? Then you know the pain: MCP server lists drift apart, skills get shared via hand-made symlinks, API keys end up in plaintext in your `.zshrc`, and setting up a second machine means an afternoon of copy-paste.
 
 The `clp` command (also available as `ccprofiles`) fixes that:
 
-- 🔎 **Adopt** your existing `.claude*` directories into a declarative manifest — zero manual config
+- 🔎 **Adopt** existing `.claude*` and `.codex*` homes into one declarative manifest — zero manual config
 - 🎛️ **Set up profiles the easy way** — a guided web form to create, edit, and delete profiles: launcher, env, links, MCP, and provider — no hand-editing config files
 - 🌐 **Custom LLM providers per profile** — point a profile at z.ai (GLM), mimo, OpenRouter, or any Anthropic-compatible endpoint with a preset picker; base URL + token + model mappings managed for you, token kept in the keychain
 - 🧩 **Manage MCP servers** across profiles: drift matrix, add/remove everywhere at once, sync one profile's set to others
@@ -40,7 +40,7 @@ cd packages/cli && npm link
 ## Quickstart
 
 ```bash
-clp adopt --yes          # REQUIRED FIRST: scan ~/.claude* and build the manifest
+clp adopt --yes          # REQUIRED FIRST: scan ~/.claude* + ~/.codex* and build manifest
 clp list                 # see all your profiles
 clp doctor               # find broken links & plaintext keys
 clp secrets migrate      # move API keys from .zshrc into the OS keychain
@@ -69,6 +69,17 @@ cl-work                          # launches claude with CLAUDE_CONFIG_DIR=~/.cla
 ```
 
 `clp apply` writes a launcher function per profile into your shell startup file — `.zshrc`/`.bashrc` on macOS/Linux, your **PowerShell profile** on Windows. After applying, reload the shell (or open a new terminal) and the `cl-*` commands are available directly.
+
+For Codex, select agent in dashboard or pass `--agent codex`:
+
+```bash
+clp create work --agent codex
+# restart shell, then:
+cx-work                          # launches codex with CODEX_HOME=~/.codex-work
+cx-work login                    # signs in inside that CODEX_HOME
+```
+
+Codex homes use `config.toml` MCP tables and file-backed `auth.json`; ccprofiles never copies auth into manifest. Set `cli_auth_credentials_store = "file"` per Codex home when strict account isolation is required—OS keyring storage can otherwise remain shared.
 
 ### Using the launchers on Windows (PowerShell)
 
@@ -168,7 +179,7 @@ It's **localhost-only** and guarded by a per-launch session token plus an Origin
 
 Three layers of state:
 
-1. **Live state** — your actual `.claude*` dirs and shell rc files. Claude Code owns these; the tool edits only the keys it manages (`mcpServers` and the `env` block in `settings.json`, its marked rc block, its links).
+1. **Live state** — actual `.claude*` / `.codex*` dirs and shell rc files. Tool edits only managed MCP tables (`mcpServers` JSON or `mcp_servers` TOML), Claude `settings.json` env, marked rc block, and declared links.
 2. **Manifest** — `~/.ccprofiles/manifest.yaml`, a platform-neutral declaration (paths templated as `{home}`, secrets referenced as `secret://name`). Versioned with local git commits; safe to share.
 3. **Secrets store** — per-machine keychain: macOS Keychain, Linux `secret-tool` (libsecret), or an AES-256-GCM encrypted file as fallback (native Windows and headless Linux — set `CCPROFILES_PASSPHRASE` in your environment for it). Values never appear in the manifest, bundles, or rc files; launcher functions resolve them at run time by calling the CLI.
 
