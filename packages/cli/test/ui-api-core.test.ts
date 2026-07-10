@@ -147,6 +147,18 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { sharedSessions: 'yes' })
     expect(res._status).toBe(400)
   })
+  it('PATCH sharedPlugins sets the flag and GET returns it', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { sharedPlugins: true })
+    expect(res._status).toBe(200)
+    const rows = (await callApi(ctx, 'GET', '/api/profiles'))._json
+    expect(rows.find((r: any) => r.name === 'default').sharedPlugins).toBe(true)
+  })
+  it('PATCH sharedPlugins rejects a non-boolean', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { sharedPlugins: 'yes' })
+    expect(res._status).toBe(400)
+  })
   it('GET /api/sessions returns pooled projects', async () => {
     await mkdir(join(home, '.claude', 'projects', 'proj'), { recursive: true })
     await writeFile(join(home, '.claude', 'projects', 'proj', 's1.jsonl'),

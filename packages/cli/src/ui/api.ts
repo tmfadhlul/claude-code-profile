@@ -83,6 +83,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
         settingsEnv: decl?.settingsEnv ?? {}, liveSettingsEnv: lp.settingsEnv,
         skipPermissions: decl?.skipPermissions ?? false,
         sharedSessions: decl?.sharedSessions ?? false,
+        sharedPlugins: decl?.sharedPlugins ?? false,
       }
     })
     sendJson(res, 200, rows)
@@ -119,7 +120,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     const name = decodeURIComponent(mtch[1])
     const pr = m.profiles.find(p => p.name === name)
     if (!pr) throw new HttpError(404, `unknown profile: ${name}`)
-    const body = await readJson<{ env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null; settingsEnv?: Record<string, string>; skipPermissions?: boolean; sharedSessions?: boolean }>(req)
+    const body = await readJson<{ env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null; settingsEnv?: Record<string, string>; skipPermissions?: boolean; sharedSessions?: boolean; sharedPlugins?: boolean }>(req)
     if (body.env) {
       if (!Object.values(body.env).every(v => typeof v === 'string')) throw new HttpError(400, 'env values must be strings')
       pr.env = body.env
@@ -140,6 +141,10 @@ export function buildRoutes(ctx: CliContext): Route[] {
     if (body.sharedSessions !== undefined) {
       if (typeof body.sharedSessions !== 'boolean') throw new HttpError(400, 'sharedSessions must be a boolean')
       pr.sharedSessions = body.sharedSessions
+    }
+    if (body.sharedPlugins !== undefined) {
+      if (typeof body.sharedPlugins !== 'boolean') throw new HttpError(400, 'sharedPlugins must be a boolean')
+      pr.sharedPlugins = body.sharedPlugins
     }
     if (!pr.launcher) pr.skipPermissions = false // the flag only lives in a launcher; keep it off without one
     assertSafe(m)
