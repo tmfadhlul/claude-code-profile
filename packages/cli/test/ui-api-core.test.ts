@@ -135,4 +135,22 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     const row = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'default')
     expect(row.skipPermissions).toBe(false)
   })
+  it('PATCH sharedSessions sets the flag and GET returns it', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { sharedSessions: true })
+    expect(res._status).toBe(200)
+    const rows = (await callApi(ctx, 'GET', '/api/profiles'))._json
+    expect(rows.find((r: any) => r.name === 'default').sharedSessions).toBe(true)
+  })
+  it('PATCH sharedSessions rejects a non-boolean', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { sharedSessions: 'yes' })
+    expect(res._status).toBe(400)
+  })
+  it('GET /api/sessions returns pooled projects', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    await callApi(ctx, 'PATCH', '/api/profiles/default', { sharedSessions: true })
+    const rows = (await callApi(ctx, 'GET', '/api/sessions'))._json
+    expect(Array.isArray(rows)).toBe(true)
+  })
 })
