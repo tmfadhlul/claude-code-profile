@@ -58,7 +58,11 @@ clp mcp add shadcn --all --command npx --args "shadcn@latest,mcp"
 clp mcp sync --from oauth --to office,z        # make profiles match
 ```
 
-> **Scope:** `clp` manages **user-scope** MCP servers only (the top-level `mcpServers` in `~/.claude.json`). Local/project-scoped servers — added with `claude mcp add` at its default scope, stored under `projects[...]` or in a project `.mcp.json` — are intentionally left untouched (they're tied to a working directory). If a server isn't showing up in `clp mcp list`, re-add it at user scope: `claude mcp add <name> --scope user -- <command>`, then `clp adopt --yes`.
+The matrix and every `add`/`rm`/`sync` span **both agents** — sync a Claude profile's server set onto a Codex profile and it lands in that Codex home's `config.toml` (TOML-translated), and vice versa.
+
+> **Scope:** `clp` manages **user-scope** MCP servers only, across both Claude (`mcpServers` in `~/.claude.json`) and Codex (`mcp_servers` in `~/.codex*/config.toml`). Project-scoped servers are intentionally left untouched:
+> - **Claude** — servers added with `claude mcp add` at its default scope live under `projects[...]` or a project `.mcp.json`; clp never reads them. If one should be managed, re-add it at user scope (`claude mcp add <name> --scope user -- <command>`) then `clp adopt --yes`.
+> - **Codex** — it has no project scope, so per-project launchers (identified by a `--project-dir` arg, e.g. code-context-engine's `cce serve --project-dir <path>`) sit in the *same* global table as your real user servers. clp hides these from `clp mcp list` and the drift matrix, and **preserves them on `apply`** — they're never surfaced, synced to other profiles, or deleted.
 
 ### New profile for a new account
 
