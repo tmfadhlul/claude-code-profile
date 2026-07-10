@@ -39,6 +39,7 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
       mcp: Object.keys(lp.mcpServers).sort(),
       settingsEnv: lp.settingsEnv,
       skipPermissions: false,
+      sharedSessions: false,
     }
   })
 

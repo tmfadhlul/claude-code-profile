@@ -58,6 +58,7 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
         mcp: src ? [...src.mcp] : [],
         settingsEnv: {},
         skipPermissions: false,
+        sharedSessions: false,
       })
       await saveManifest(ctx.manifestRoot, m)
       const actions = await planActions(ctx, m)
