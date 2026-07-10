@@ -7,7 +7,7 @@ import { planActions } from '../plan.js'
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
 export function registerSessionCommands(program: Command, ctx: CliContext): void {
-  const sessions = program.command('sessions').description('share Claude Code session history across profiles')
+  const sessions = program.command('sessions').description('share Claude Code or Codex session history across profiles')
 
   async function setShared(name: string, on: boolean): Promise<void> {
     const m = await requireManifest(ctx)
@@ -29,13 +29,13 @@ export function registerSessionCommands(program: Command, ctx: CliContext): void
     const live = await discoverProfiles(ctx.home)
     const rows = await scanSessions({
       sharedRoot: join(ctx.manifestRoot, 'shared'),
-      profiles: live.map(lp => ({ name: liveProfileName(lp), dir: lp.dir })),
+      profiles: live.map(lp => ({ name: liveProfileName(lp), dir: lp.dir, agent: lp.agent })),
     })
     if (!rows.length) { console.log('no sessions found'); return }
     for (const p of rows) {
-      console.log(`\n[${p.scope}] ${p.project}`)
+      console.log(`\n[${p.scope}/${p.agent}] ${p.project}`)
       for (const s of p.sessions)
-        console.log(`  ${s.id.slice(0, 8)}  ${String(s.messageCount).padStart(4)} msg  ${s.firstPrompt ?? '(no prompt)'}`)
+        console.log(`  ${s.id}  ${String(s.messageCount).padStart(4)} msg  ${s.firstPrompt ?? '(no prompt)'}`)
     }
   })
 }

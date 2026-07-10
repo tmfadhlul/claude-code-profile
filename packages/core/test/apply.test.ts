@@ -179,4 +179,29 @@ describe('shared sessions', () => {
     expect(existsSync(join(home, '.claude', 'projects', 'proj', 's1.jsonl'))).toBe(true) // snapshot copied back
     expect(existsSync(join(sharedRoot, 'projects', 'proj', 's1.jsonl'))).toBe(true)      // pool intact
   })
+
+  it('shares and unshares Codex sessions/ with the same migration semantics', async () => {
+    const dir = join(home, '.codex-work')
+    await mkdir(join(dir, 'sessions', '2026', '07', '10'), { recursive: true })
+    await writeFile(join(dir, 'config.toml'), '')
+    await writeFile(join(dir, 'sessions', '2026', '07', '10', 'rollout-test.jsonl'), '{"type":"session_meta","payload":{"cwd":"/tmp/proj"}}\n')
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    const codexManifest = (on: boolean): Manifest => ({
+      version: 1, hub: null, mcpServers: {}, profiles: [{
+        agent: 'codex', name: 'codex-work', dir: '{home}/.codex-work', launcher: 'cx-work', auth: 'oauth',
+        env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: on,
+      }],
+    })
+
+    await executeApply(planApply(codexManifest(true), await discoverProfiles(home), p, undefined, sharedRoot),
+      { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 'codex-share' })
+    expect((await lstat(join(dir, 'sessions'))).isSymbolicLink()).toBe(true)
+    expect(existsSync(join(sharedRoot, 'sessions', '2026', '07', '10', 'rollout-test.jsonl'))).toBe(true)
+
+    await executeApply(planApply(codexManifest(false), await discoverProfiles(home), p, undefined, sharedRoot),
+      { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 'codex-unshare' })
+    expect((await lstat(join(dir, 'sessions'))).isSymbolicLink()).toBe(false)
+    expect(existsSync(join(dir, 'sessions', '2026', '07', '10', 'rollout-test.jsonl'))).toBe(true)
+  })
 })

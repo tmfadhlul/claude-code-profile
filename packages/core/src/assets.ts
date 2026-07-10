@@ -5,7 +5,7 @@ import type { Manifest } from './manifest.js'
 import { renderPath, type Platform } from './platform.js'
 import { atomicWrite } from './fsutil.js'
 
-const HUB_DIRS = ['skills', 'commands']
+const HUB_DIRS = ['skills', 'commands', 'plugins']
 
 async function walk(dir: string): Promise<string[]> {
   const out: string[] = []
@@ -33,8 +33,9 @@ export async function collectAssets(m: Manifest, p: Platform): Promise<Record<st
     }
   }
   for (const pr of m.profiles) {
-    const claudeMd = join(renderPath(pr.dir, p), 'CLAUDE.md')
-    if (existsSync(claudeMd)) assets[`profiles/${pr.name}/CLAUDE.md`] = await readFile(claudeMd, 'utf8')
+    const guidanceName = (pr.agent ?? 'claude') === 'codex' ? 'AGENTS.md' : 'CLAUDE.md'
+    const guidance = join(renderPath(pr.dir, p), guidanceName)
+    if (existsSync(guidance)) assets[`profiles/${pr.name}/${guidanceName}`] = await readFile(guidance, 'utf8')
   }
   return assets
 }

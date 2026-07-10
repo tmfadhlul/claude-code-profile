@@ -123,9 +123,12 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
           <div className="space-y-1.5">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={sharedSessions} onChange={e => setSharedSessions(e.target.checked)} />
-              Share session history (pool <span className="font-mono text-xs">projects / todos / shell-snapshots</span> with other shared profiles)
+              Share session history (pool <span className="font-mono text-xs">{profile.agent === 'codex' ? 'sessions' : 'projects / todos / shell-snapshots'}</span> with other shared profiles)
             </label>
-            <p className="text-xs text-muted-foreground">First enable migrates this profile's existing sessions into the shared pool (a backup is taken).</p>
+            <p className="text-xs text-muted-foreground">
+              First enable migrates this profile's existing sessions into the shared pool (a backup is taken).
+              {profile.agent === 'codex' ? ' Resume from another profile with cx-<name> resume or resume --last in the same project.' : ''}
+            </p>
           </div>
 
           <div className="space-y-1.5">

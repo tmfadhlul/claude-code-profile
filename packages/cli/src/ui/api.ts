@@ -167,7 +167,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     const live = await discoverProfiles(ctx.home)
     const rows = await scanSessions({
       sharedRoot: join(ctx.manifestRoot, 'shared'),
-      profiles: live.map(lp => ({ name: liveProfileName(lp), dir: lp.dir })),
+      profiles: live.map(lp => ({ name: liveProfileName(lp), dir: lp.dir, agent: lp.agent })),
     })
     sendJson(res, 200, rows)
   })

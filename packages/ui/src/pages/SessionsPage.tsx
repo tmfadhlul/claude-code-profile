@@ -6,7 +6,7 @@ type SessionMeta = {
   id: string; mtime: number; messageCount: number
   firstPrompt: string | null; gitBranch: string | null; model: string | null; sizeBytes: number
 }
-type ProjectSessions = { scope: string; project: string; sessions: SessionMeta[] }
+type ProjectSessions = { agent: 'claude' | 'codex'; scope: string; project: string; sessions: SessionMeta[] }
 
 export function SessionsPage() {
   const [data, setData] = useState<ProjectSessions[] | null>(null)
@@ -25,7 +25,7 @@ export function SessionsPage() {
           <div key={key} className="border rounded-lg">
             <button onClick={() => setOpenKey(open ? null : key)} className="w-full flex items-center justify-between gap-3 p-3 text-left">
               <span className="font-mono text-sm truncate">{p.project}</span>
-              <span className="text-xs text-muted-foreground shrink-0">{p.scope} · {p.sessions.length} sessions</span>
+              <span className="text-xs text-muted-foreground shrink-0">{p.scope} · {p.agent} · {p.sessions.length} sessions</span>
             </button>
             {open && (
               <div className="border-t divide-y">
@@ -35,6 +35,9 @@ export function SessionsPage() {
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {new Date(s.mtime).toLocaleString()} · {s.messageCount} msg
                       {s.gitBranch ? ` · ${s.gitBranch}` : ''}{s.model ? ` · ${s.model}` : ''}
+                    </div>
+                    <div className="font-mono text-[11px] text-muted-foreground mt-0.5 break-all">
+                      {p.agent === 'codex' ? `codex resume ${s.id}` : `claude --resume ${s.id}`}
                     </div>
                   </div>
                 ))}

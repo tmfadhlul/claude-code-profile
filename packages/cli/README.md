@@ -14,7 +14,7 @@ The `clp` command (also available as `ccprofiles`) fixes that:
 - 🖥️ **Replicate to another machine over LAN** — PIN pairing, end-to-end encrypted, no cloud, works macOS ↔ Windows ↔ Linux ↔ WSL
 - 🖼️ **Web dashboard** — `clp ui` opens a local browser panel to manage everything visually
 - 📦 **Offline bundles** for the no-network case (`clp export setup.ccb`)
-- 🛟 **Safe by design**: surgical config edits only, automatic backups, `--dry-run` everywhere, never touches your sessions/history
+- 🛟 **Safe by design**: surgical config edits only, automatic backups, and opt-in session sharing with migration backups
 
 ## Install
 
@@ -80,6 +80,26 @@ cx-work login                    # signs in inside that CODEX_HOME
 ```
 
 Codex homes use `config.toml` MCP tables and file-backed `auth.json`; ccprofiles never copies auth into manifest. Set `cli_auth_credentials_store = "file"` per Codex home when strict account isolation is required—OS keyring storage can otherwise remain shared.
+
+### Share resumable sessions across profiles
+
+Session sharing is opt-in per profile. First enable moves existing history into `~/.ccprofiles/shared/`, takes a backup, and links each enabled profile to the pool:
+
+```bash
+clp sessions share work          # Claude: projects, todos, shell snapshots
+clp sessions share codex-work    # Codex: sessions
+clp sessions list
+```
+
+Resume from the same project under another account:
+
+```bash
+cl-other --resume                # Claude session picker
+cx-other resume                  # Codex picker, filtered to current directory
+cx-other resume --last           # most recent Codex session in current directory
+```
+
+Use `clp sessions unshare <profile>` to restore a local snapshot while leaving shared pool intact. Dashboard exposes same toggle in profile editor and lists both Claude and Codex sessions with full resume IDs.
 
 ### Using the launchers on Windows (PowerShell)
 
@@ -158,7 +178,7 @@ Manifest, MCP servers, skills, commands, launcher functions, and (opt-in) secret
 
 Two things intentionally don't travel:
 
-- **OAuth sessions** — you still run `/login` once per account on the new machine (Anthropic session state is machine-bound; syncing it would be wrong).
+- **Authentication sessions** — conversation history can use opt-in shared pool, but account credentials never travel; sign in once per account on new machine.
 - The **`default` profile has no `cl-*` launcher** — it's what plain `claude` already launches; only the named profiles get launcher functions.
 
 ## Web dashboard
@@ -171,7 +191,7 @@ A local panel to manage everything the CLI does — and the easiest way to set p
 
 - **Profiles** — create, edit, and delete profiles from a form: launcher function, environment variables, links, MCP toggles, a **guided Provider section** (preset picker for z.ai / mimo / OpenRouter / Anthropic-default / Custom, labeled base-URL / token / model fields, copy-from-another-profile, and an *Advanced* raw editor for any other `settings.json` env var), and a **Skip permissions** toggle that adds `--dangerously-skip-permissions` to that profile's launcher (⚠ bypasses every confirmation — launcher profiles only). Deleting a profile is manifest-only — the `~/.claude-*` directory stays on disk.
 - **Shell RC** — preview the managed block in your `.zshrc`/`.bashrc` vs. what the manifest renders, with a one-click update.
-- **MCP servers** (interactive drift matrix), **Secrets** (add / reveal / delete / migrate, plus attach a secret to a profile as an env var), **Sync**, and **Doctor**.
+- **Sessions** (Claude + Codex shared-history viewer), **MCP servers** (interactive drift matrix), **Secrets** (add / reveal / delete / migrate, plus attach a secret to a profile as an env var), **Sync**, and **Doctor**.
 
 It's **localhost-only** and guarded by a per-launch session token plus an Origin check, so nothing off your machine (and no website in your browser) can reach the API. Pass `--no-open` to just print the URL, or `--port <n>` to pin the port.
 
@@ -199,6 +219,7 @@ Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN sh
 | MCP | `mcp list` · `mcp add/rm <name> [--profile p\|--all]` · `mcp sync --from p --to p1,p2\|--all` |
 | Secrets | `secrets set/get/list/rm` · `secrets migrate` |
 | Manifest | `status` · `apply` · `snapshot` |
+| Sessions | `sessions share <profile>` · `sessions unshare <profile>` · `sessions list` |
 | Sync | `serve [--allow-secrets]` · `pair <host> --port n --pin p` · `devices` · `sync --from dev [--with-secrets]` |
 | Bundle | `export <file>` · `import <file>` |
 | Dashboard | `ui [--port n] [--no-open]` |
