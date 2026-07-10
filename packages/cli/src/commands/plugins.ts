@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { requireManifest, type CliContext } from '../context.js'
 
-function claudeRunner(): PluginRunner {
+export function claudeRunner(): PluginRunner {
   const run = (configDir: string, args: string[]) => new Promise<void>((resolve, reject) => {
     const p = spawn('claude', ['plugin', ...args], { env: { ...process.env, CLAUDE_CONFIG_DIR: configDir }, stdio: ['ignore', 'pipe', 'pipe'] })
     let err = ''
@@ -32,22 +32,35 @@ function targets(m: Manifest, opts: { profile?: string; all?: boolean }): string
   return [opts.profile]
 }
 
+/**
+ * Drive the plugin runner (install/uninstall/marketplace add) so each named profile's live
+ * `claude plugin` state matches its manifest-declared `plugins[]`. Shared by the CLI commands
+ * below and the UI API (`/api/plugins` routes), which supply their own `ctx.pluginRunner` fake
+ * in tests instead of shelling out to the real `claude` binary.
+ */
+export async function reconcilePlugins(ctx: CliContext, m: Manifest, names: string[]): Promise<string[]> {
+  const runner = ctx.pluginRunner ?? claudeRunner()
+  const live = await discoverProfiles(ctx.home)
+  const log: string[] = []
+  for (const name of names) {
+    const pr = m.profiles.find(p => p.name === name)!
+    if ((pr.agent ?? 'claude') !== 'claude') continue
+    const dir = renderPath(pr.dir, ctx.platform)
+    await restoreLegacyPluginSymlink(join(dir, 'plugins'))
+    const lp = live.find(l => l.dir === dir)
+    const current = Object.entries(lp?.enabledPlugins ?? {}).filter(([, v]) => v).map(([k]) => k)
+    const lines = await reconcileProfilePlugins({ configDir: dir, desired: pr.plugins, current, marketplaces: m.marketplaces, runner })
+    for (const line of lines) log.push(`${name}: ${line}`)
+  }
+  return log
+}
+
 export function registerPluginCommands(program: Command, ctx: CliContext): void {
   const plugins = program.command('plugins').description('manage Claude Code plugins across profiles')
 
   async function reconcile(m: Manifest, names: string[]): Promise<void> {
-    const runner = ctx.pluginRunner ?? claudeRunner()
-    const live = await discoverProfiles(ctx.home)
-    for (const name of names) {
-      const pr = m.profiles.find(p => p.name === name)!
-      if ((pr.agent ?? 'claude') !== 'claude') continue
-      const dir = renderPath(pr.dir, ctx.platform)
-      await restoreLegacyPluginSymlink(join(dir, 'plugins'))
-      const lp = live.find(l => l.dir === dir)
-      const current = Object.entries(lp?.enabledPlugins ?? {}).filter(([, v]) => v).map(([k]) => k)
-      const log = await reconcileProfilePlugins({ configDir: dir, desired: pr.plugins, current, marketplaces: m.marketplaces, runner })
-      for (const line of log) console.log(`${name}: ${line}`)
-    }
+    const log = await reconcilePlugins(ctx, m, names)
+    for (const line of log) console.log(line)
   }
 
   plugins.command('list').action(async () => {
