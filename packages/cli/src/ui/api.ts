@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { requireManifest, type CliContext } from '../context.js'
 import { secretsStore, migrateRcSecrets, migrateSettingsSecrets, KEY_VARS } from '../commands/secrets.js'
+import { reconcilePlugins } from '../commands/plugins.js'
 import { sendJson, readJson, HttpError, type Route } from './http.js'
 import { planActions, planActionsPreflight } from '../plan.js'
 
@@ -314,6 +315,84 @@ export function buildRoutes(ctx: CliContext): Route[] {
     assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)
     await applyAndReport(m)
+    sendJson(res, 200, { ok: true })
+  })
+
+  // ── plugins ─────────────────────────────────────────────────────────────────
+  // Plugins are Claude-only (mirrors the `plugins` CLI command's guard) — resolve 'all' to
+  // Claude profiles only, and reject any explicitly-named codex profile.
+  function pluginTargetsOf(m: Manifest, targets: string[] | 'all'): string[] {
+    const names = targets === 'all'
+      ? m.profiles.filter(p => (p.agent ?? 'claude') === 'claude').map(p => p.name)
+      : targetsOf(m, targets)
+    for (const t of names) {
+      const pr = m.profiles.find(p => p.name === t)!
+      if ((pr.agent ?? 'claude') === 'codex') throw new HttpError(400, `plugins are Claude-only; "${t}" is a codex profile`)
+    }
+    return names
+  }
+
+  add('GET', /^\/api\/plugins$/, async (_m, _req, res) => {
+    const m = await mustManifest()
+    sendJson(res, 200, {
+      marketplaces: Object.keys(m.marketplaces).sort(),
+      profiles: m.profiles.filter(p => (p.agent ?? 'claude') === 'claude').map(p => ({ name: p.name, has: p.plugins })),
+    })
+  })
+
+  add('POST', /^\/api\/plugins$/, async (_m, req, res) => {
+    const { id, source, targets } = await readJson<{ id: string; source?: string; targets: string[] | 'all' }>(req)
+    if (!id) throw new HttpError(400, 'id required')
+    const at = id.lastIndexOf('@'); const mkt = at > 0 ? id.slice(at + 1) : ''
+    if (!mkt) throw new HttpError(400, `plugin id must be name@marketplace: ${id}`)
+    const m = await mustManifest()
+    if (!m.marketplaces[mkt]) {
+      if (!source) throw new HttpError(400, `unknown marketplace "${mkt}" — source required to define it`)
+      m.marketplaces[mkt] = { source }
+    }
+    const names = pluginTargetsOf(m, targets)
+    for (const t of names) {
+      const pr = m.profiles.find(p => p.name === t)!
+      if (!pr.plugins.includes(id)) pr.plugins.push(id)
+    }
+    assertSafe(m)
+    await saveManifest(ctx.manifestRoot, m)
+    await reconcilePlugins(ctx, m, names)
+    sendJson(res, 200, { ok: true })
+  })
+
+  add('DELETE', /^\/api\/plugins\/([^/]+)$/, async (mtch, req, res) => {
+    const { targets } = await readJson<{ targets: string[] | 'all' }>(req)
+    const m = await mustManifest()
+    const id = decodeURIComponent(mtch[1])
+    const names = pluginTargetsOf(m, targets)
+    for (const t of names) {
+      const pr = m.profiles.find(p => p.name === t)!
+      pr.plugins = pr.plugins.filter(x => x !== id)
+    }
+    if (!m.profiles.some(p => p.plugins.includes(id))) {
+      const at = id.lastIndexOf('@'); const mkt = at > 0 ? id.slice(at + 1) : ''
+      if (mkt && !m.profiles.some(p => p.plugins.some(x => x.endsWith(`@${mkt}`)))) delete m.marketplaces[mkt]
+    }
+    assertSafe(m)
+    await saveManifest(ctx.manifestRoot, m)
+    await reconcilePlugins(ctx, m, names)
+    sendJson(res, 200, { ok: true })
+  })
+
+  add('POST', /^\/api\/plugins\/sync$/, async (_m, req, res) => {
+    const { from, to } = await readJson<{ from: string; to: string[] | 'all' }>(req)
+    const m = await mustManifest()
+    const src = m.profiles.find(p => p.name === from)
+    if (!src) throw new HttpError(400, `unknown profile: ${from}`)
+    const names = pluginTargetsOf(m, to)
+    for (const t of names) {
+      if (t === src.name) continue
+      m.profiles.find(p => p.name === t)!.plugins = [...src.plugins]
+    }
+    assertSafe(m)
+    await saveManifest(ctx.manifestRoot, m)
+    await reconcilePlugins(ctx, m, names.filter(t => t !== src.name))
     sendJson(res, 200, { ok: true })
   })
 
