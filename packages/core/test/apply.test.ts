@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, readFile, readlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, readlink, readdir, lstat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -119,5 +119,64 @@ describe('settingsEnv apply', () => {
     const home = await mkdtemp(join(tmpdir(), 'ccp-apply-senv3-'))
     const m = manifestWith({ ANTHROPIC_AUTH_TOKEN: 'secret://z-token' })
     expect(() => planApply(m, [], platformFor(home))).toThrow(/pass resolved settings env/)
+  })
+})
+
+describe('shared sessions', () => {
+  function sharedManifest(on: boolean): Manifest {
+    return {
+      version: 1, hub: null,
+      profiles: [
+        { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {},
+          links: {}, mcp: [], skipPermissions: false, sharedSessions: on },
+      ],
+      mcpServers: {},
+    }
+  }
+
+  it('migrates an existing projects dir into the pool and symlinks it', async () => {
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    // seed a real session under the profile
+    await mkdir(join(home, '.claude', 'projects', 'proj'), { recursive: true })
+    await writeFile(join(home, '.claude', 'projects', 'proj', 's1.jsonl'), '{"cwd":"/tmp/proj"}\n')
+
+    const actions = planApply(sharedManifest(true), await discoverProfiles(home), p, undefined, sharedRoot)
+    expect(actions.map(a => a.kind)).toContain('share-session-dir')
+    await executeApply(actions, { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 't1' })
+
+    // projects is now a symlink to the pool
+    expect((await lstat(join(home, '.claude', 'projects'))).isSymbolicLink()).toBe(true)
+    // the session moved into the pool
+    expect(existsSync(join(sharedRoot, 'projects', 'proj', 's1.jsonl'))).toBe(true)
+    // a backup was taken
+    expect((await readdir(join(home, '.ccprofiles', 'backups'))).length).toBeGreaterThan(0)
+  })
+
+  it('is idempotent once symlinked', async () => {
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    let actions = planApply(sharedManifest(true), await discoverProfiles(home), p, undefined, sharedRoot)
+    await executeApply(actions, { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 't1' })
+    actions = planApply(sharedManifest(true), await discoverProfiles(home), p, undefined, sharedRoot)
+    expect(actions.some(a => a.kind === 'share-session-dir')).toBe(false)
+  })
+
+  it('unshare restores a real dir seeded from the pool without deleting the pool', async () => {
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    await executeApply(
+      planApply(sharedManifest(true), await discoverProfiles(home), p, undefined, sharedRoot),
+      { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 't1' })
+    await mkdir(join(sharedRoot, 'projects', 'proj'), { recursive: true })
+    await writeFile(join(sharedRoot, 'projects', 'proj', 's1.jsonl'), '{"cwd":"/tmp/proj"}\n')
+
+    const actions = planApply(sharedManifest(false), await discoverProfiles(home), p, undefined, sharedRoot)
+    expect(actions.map(a => a.kind)).toContain('unshare-session-dir')
+    await executeApply(actions, { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 't2' })
+
+    expect((await lstat(join(home, '.claude', 'projects'))).isSymbolicLink()).toBe(false)
+    expect(existsSync(join(home, '.claude', 'projects', 'proj', 's1.jsonl'))).toBe(true) // snapshot copied back
+    expect(existsSync(join(sharedRoot, 'projects', 'proj', 's1.jsonl'))).toBe(true)      // pool intact
   })
 })
