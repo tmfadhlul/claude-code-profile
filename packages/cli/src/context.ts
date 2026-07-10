@@ -9,6 +9,7 @@ import { registerManifestCommands } from './commands/manifest.js'
 import { registerSyncCommands } from './commands/sync.js'
 import { registerBundleCommands } from './commands/bundle.js'
 import { registerSessionCommands } from './commands/sessions.js'
+import { registerPluginCommands } from './commands/plugins.js'
 import { registerUiCommand } from './ui/command.js'
 
 export interface CliContext {
@@ -59,6 +60,7 @@ export function buildProgram(ctx: CliContext): Command {
   program.exitOverride() // throw instead of process.exit — required for tests
   registerProfileCommands(program, ctx)
   registerSessionCommands(program, ctx)
+  registerPluginCommands(program, ctx)
   registerMcpCommands(program, ctx)
   registerSecretsCommands(program, ctx)
   registerManifestCommands(program, ctx)
