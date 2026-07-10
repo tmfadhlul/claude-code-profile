@@ -258,6 +258,10 @@ npm test        # vitest — unit + e2e (incl. an in-process two-machine sync te
 npm run build   # builds core + cli + the dashboard, bundled into the CLI
 ```
 
+## Support
+
+If ccprofiles saves you time, [buy me a coffee on Ko-fi](https://ko-fi.com/teukufadh).
+
 ## License
 
 MIT
