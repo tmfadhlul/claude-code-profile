@@ -62,6 +62,19 @@ describe('ui api: plugins', () => {
     expect(data.profiles.find((p: any) => p.name === 'default').has).not.toContain('ponytail@ponytail')
   })
 
+  it('DELETE reconciles against live current state and calls uninstall', async () => {
+    // seed live settings.json so discoverProfiles sees ponytail@ponytail already enabled — the
+    // fake runner never writes settings.json, so this is the only way `current` is non-empty.
+    await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'ponytail@ponytail': true } }))
+    await callApi(ctx, 'POST', '/api/adopt')
+    const adopted = (await callApi(ctx, 'GET', '/api/plugins'))._json
+    expect(adopted.profiles.find((p: any) => p.name === 'default').has).toContain('ponytail@ponytail')
+
+    const del = await callApi(ctx, 'DELETE', '/api/plugins/ponytail@ponytail', { targets: ['default'] })
+    expect(del._status).toBe(200)
+    expect(calls).toContain('uninstall ponytail@ponytail')
+  })
+
   it('sync copies the plugin set between profiles and rejects a codex target', async () => {
     await mkdir(join(home, '.codex-x'), { recursive: true })
     await writeFile(join(home, '.codex-x', 'config.toml'), 'model = "gpt-5-codex"\n')
