@@ -11,10 +11,10 @@ beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'ccp-assets-')) })
 
 function codexHub(): Manifest {
   return {
-    version: 1, hub: 'codex', mcpServers: {},
+    version: 1, hub: 'codex', mcpServers: {}, marketplaces: {},
     profiles: [{
       agent: 'codex', name: 'codex', dir: '{home}/.codex', launcher: null, auth: 'oauth',
-      env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: false,
+      env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: false, plugins: [],
     }],
   }
 }

@@ -9,9 +9,10 @@ const sample = {
   hub: 'default',
   profiles: [{
     name: 'oauth', dir: '{home}/.claude-oauth', launcher: 'cl-auth',
-    auth: 'oauth' as const, env: {}, links: { skills: 'hub', commands: 'hub' }, mcp: ['playwright'], settingsEnv: {}, skipPermissions: false, sharedSessions: false,
+    auth: 'oauth' as const, env: {}, links: { skills: 'hub', commands: 'hub' }, mcp: ['playwright'], settingsEnv: {}, skipPermissions: false, sharedSessions: false, plugins: [],
   }],
   mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
+  marketplaces: {},
 }
 
 describe('manifest', () => {
@@ -181,5 +182,55 @@ profiles:
 mcpServers: {}
 `)
     expect(noFlag.profiles[0].sharedSessions).toBe(false)
+  })
+
+  it('parses plugins[] and marketplaces registry, defaults plugins to []', () => {
+    const m = parseManifest(`
+version: 1
+hub: null
+profiles:
+  - name: a
+    dir: '{home}/.claude-a'
+    launcher: cl-a
+    auth: env
+    plugins: [ 'ponytail@ponytail' ]
+mcpServers: {}
+marketplaces:
+  ponytail: { source: 'DietrichGebert/ponytail' }
+`)
+    expect(m.profiles[0].plugins).toEqual(['ponytail@ponytail'])
+    expect(m.marketplaces.ponytail.source).toBe('DietrichGebert/ponytail')
+
+    const d = parseManifest(`
+version: 1
+hub: null
+profiles:
+  - { name: b, dir: '{home}/.claude-b', launcher: cl-b, auth: env }
+mcpServers: {}
+`)
+    expect(d.profiles[0].plugins).toEqual([])
+    expect(d.marketplaces).toEqual({})
+  })
+
+  it('rejects a plugin id whose marketplace is not in the registry', () => {
+    expect(() => parseManifest(`
+version: 1
+hub: null
+profiles:
+  - { name: a, dir: '{home}/.claude-a', launcher: cl-a, auth: env, plugins: [ 'x@nope' ] }
+mcpServers: {}
+marketplaces: {}
+`)).toThrow(/undefined marketplace|nope/)
+  })
+
+  it('assertSafeManifest rejects an unsafe marketplace source', () => {
+    expect(() => parseManifest(`
+version: 1
+hub: null
+profiles: []
+mcpServers: {}
+marketplaces:
+  bad: { source: 'a; rm -rf ~' }
+`)).toThrow(/unsafe/)
   })
 })

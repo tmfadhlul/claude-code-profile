@@ -46,8 +46,8 @@ describe('buildManifest', () => {
 describe('preserveSecretRefs', () => {
   function manifestWith(settingsEnv: Record<string, string>): Manifest {
     return {
-      version: 1, hub: null, mcpServers: {},
-      profiles: [{ name: 'default', dir: '{home}/.claude', launcher: null, auth: 'env', env: {}, links: {}, mcp: [], settingsEnv, skipPermissions: false, sharedSessions: false }],
+      version: 1, hub: null, mcpServers: {}, marketplaces: {},
+      profiles: [{ name: 'default', dir: '{home}/.claude', launcher: null, auth: 'env', env: {}, links: {}, mcp: [], settingsEnv, skipPermissions: false, sharedSessions: false, plugins: [] }],
     }
   }
 
