@@ -8,6 +8,11 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
     for (const [name, def] of Object.entries(lp.mcpServers))
       mcpServers[name] ??= def
 
+  const marketplaces: Manifest['marketplaces'] = {}
+  for (const lp of live)
+    for (const [name, def] of Object.entries(lp.marketplaces ?? {}))
+      marketplaces[name] ??= def
+
   // hub = profile whose dir is the most common link target prefix
   const linkVotes = new Map<string, number>()
   for (const lp of live)
@@ -39,11 +44,11 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
       settingsEnv: lp.settingsEnv,
       skipPermissions: false,
       sharedSessions: false,
-      plugins: [],
+      plugins: Object.entries(lp.enabledPlugins ?? {}).filter(([, v]) => v).map(([k]) => k).sort(),
     }
   })
 
-  return { version: 1, hub, profiles, mcpServers, marketplaces: {} }
+  return { version: 1, hub, profiles, mcpServers, marketplaces }
 }
 
 /**
