@@ -39,10 +39,11 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
       settingsEnv: lp.settingsEnv,
       skipPermissions: false,
       sharedSessions: false,
+      plugins: [],
     }
   })
 
-  return { version: 1, hub, profiles, mcpServers }
+  return { version: 1, hub, profiles, mcpServers, marketplaces: {} }
 }
 
 /**

@@ -106,6 +106,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       settingsEnv: {},
       skipPermissions: false,
       sharedSessions: false,
+      plugins: [],
     })
     assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)

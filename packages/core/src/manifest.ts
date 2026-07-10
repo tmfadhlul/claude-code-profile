@@ -31,23 +31,29 @@ const ProfileSchema = z.object({
   settingsEnv: z.record(z.string()).default({}),
   skipPermissions: z.boolean().default(false),
   sharedSessions: z.boolean().default(false),
+  plugins: z.array(z.string()).default([]),
 })
+
+const MarketplaceSchema = z.object({ source: z.string().min(1) })
 
 const ManifestSchema = z.object({
   version: z.literal(1),
   hub: z.string().nullable(),
   profiles: z.array(ProfileSchema),
   mcpServers: z.record(McpServerSchema),
+  marketplaces: z.record(MarketplaceSchema).default({}),
 })
 
 export type McpServerDef = z.infer<typeof McpServerSchema>
 export type ProfileDecl = z.infer<typeof ProfileSchema>
 export type Manifest = z.infer<typeof ManifestSchema>
+export type MarketplaceDef = z.infer<typeof MarketplaceSchema>
 
 // identifiers that get interpolated into shell launcher code must be injection-safe
 const SAFE_NAME = /^[A-Za-z0-9_-]+$/          // profile names, launcher names, secret refs
 const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/ // POSIX/PowerShell env var names
 const SAFE_LINK_ENTRY = /^[A-Za-z0-9._-]+$/     // one profile-dir child; never a path
+const SAFE_SOURCE = /^[A-Za-z0-9._/@:-]+$/      // marketplace source (interpolated into `claude plugin` shell-out)
 const SHELL_META = /["`$;|&()\n\r<>]/         // chars that could break out of a quoted shell context
 const SECRET_PREFIX = 'secret://'
 
@@ -80,6 +86,15 @@ export function assertSafeManifest(m: Manifest): void {
         throw new ManifestError(`unsafe link entry in profile "${p.name}": ${JSON.stringify(entry)} (must be one file or directory name)`)
     }
   }
+  for (const [name, mk] of Object.entries(m.marketplaces ?? {})) {
+    if (!SAFE_NAME.test(name)) throw new ManifestError(`unsafe marketplace name: ${JSON.stringify(name)}`)
+    if (!SAFE_SOURCE.test(mk.source)) throw new ManifestError(`unsafe marketplace source for "${name}": ${JSON.stringify(mk.source)}`)
+  }
+  for (const p of m.profiles) for (const id of p.plugins) {
+    const at = id.lastIndexOf('@')
+    const nm = at > 0 ? id.slice(0, at) : id, mkt = at > 0 ? id.slice(at + 1) : ''
+    if (!SAFE_NAME.test(nm) || !SAFE_NAME.test(mkt)) throw new ManifestError(`unsafe plugin id in profile "${p.name}": ${JSON.stringify(id)}`)
+  }
 }
 
 export function parseManifest(text: string): Manifest {
@@ -90,6 +105,11 @@ export function parseManifest(text: string): Manifest {
   const m = res.data
   for (const p of m.profiles) for (const name of p.mcp)
     if (!m.mcpServers[name]) throw new ManifestError(`profile "${p.name}" references undefined mcp server "${name}"`)
+  for (const p of m.profiles) for (const id of p.plugins) {
+    const at = id.lastIndexOf('@')
+    const mkt = at > 0 ? id.slice(at + 1) : ''
+    if (!mkt || !m.marketplaces[mkt]) throw new ManifestError(`profile "${p.name}" references undefined marketplace for plugin "${id}"`)
+  }
   assertSafeManifest(m)
   return m
 }
