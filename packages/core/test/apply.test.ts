@@ -302,6 +302,21 @@ describe('shared plugins', () => {
     expect(bCfg.enabledPlugins).toEqual({ 'x@m': true, 'y@m': true })
   })
 
+  it('is idempotent: second plan emits no further plugin actions', async () => {
+    await mkdir(join(home, '.claude-a'), { recursive: true }); await writeFile(join(home, '.claude-a', '.claude.json'), '{}')
+    await mkdir(join(home, '.claude-b'), { recursive: true }); await writeFile(join(home, '.claude-b', '.claude.json'), '{}')
+    await writeFile(join(home, '.claude-a', 'settings.json'), JSON.stringify({ enabledPlugins: { 'x@m': true } }))
+    await writeFile(join(home, '.claude-b', 'settings.json'), JSON.stringify({ enabledPlugins: { 'y@m': true } }))
+
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    const actions1 = planApply(pluginManifest(true, true), await discoverProfiles(home), p, undefined, sharedRoot)
+    await executeApply(actions1, { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 't3' })
+
+    const actions2 = planApply(pluginManifest(true, true), await discoverProfiles(home), p, undefined, sharedRoot)
+    expect(actions2.some(a => a.kind === 'share-plugins-dir' || a.kind === 'set-enabled-plugins')).toBe(false)
+  })
+
   it('unshare restores a real plugins dir from the pool, pool intact', async () => {
     await mkdir(join(home, '.claude-a', 'plugins'), { recursive: true }); await writeFile(join(home, '.claude-a', '.claude.json'), '{}')
     await writeFile(join(home, '.claude-a', 'settings.json'), '{}')
