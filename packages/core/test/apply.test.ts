@@ -251,3 +251,71 @@ describe('shared sessions', () => {
     expect(existsSync(join(dir, 'sessions', '2026', '07', '10', 'rollout-test.jsonl'))).toBe(true)
   })
 })
+
+describe('shared plugins', () => {
+  function pluginManifest(a: boolean, b: boolean): Manifest {
+    return {
+      version: 1, hub: null, mcpServers: {},
+      profiles: [
+        { name: 'a', dir: '{home}/.claude-a', launcher: 'cl-a', auth: 'env', env: {}, settingsEnv: {},
+          links: {}, mcp: [], skipPermissions: false, sharedSessions: false, sharedPlugins: a },
+        { name: 'b', dir: '{home}/.claude-b', launcher: 'cl-b', auth: 'env', env: {}, settingsEnv: {},
+          links: {}, mcp: [], skipPermissions: false, sharedSessions: false, sharedPlugins: b },
+      ],
+    }
+  }
+
+  it('seeds the pool from the first shared profile and symlinks it', async () => {
+    await mkdir(join(home, '.claude-a', 'plugins', 'cache', 'ponytail'), { recursive: true })
+    await writeFile(join(home, '.claude-a', '.claude.json'), '{}')
+    await writeFile(join(home, '.claude-a', 'plugins', 'installed_plugins.json'), '{"ponytail":1}')
+    await mkdir(join(home, '.claude-b'), { recursive: true })
+    await writeFile(join(home, '.claude-b', '.claude.json'), '{}')
+    await writeFile(join(home, '.claude-b', 'settings.json'), JSON.stringify({ enabledPlugins: { 'ponytail@ponytail': true } }))
+    await writeFile(join(home, '.claude-a', 'settings.json'), JSON.stringify({ enabledPlugins: {} }))
+
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    const actions = planApply(pluginManifest(true, false), await discoverProfiles(home), p, undefined, sharedRoot)
+    expect(actions.map(a => a.kind)).toContain('share-plugins-dir')
+    await executeApply(actions, { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 't1' })
+
+    expect((await lstat(join(home, '.claude-a', 'plugins'))).isSymbolicLink()).toBe(true)
+    expect(existsSync(join(sharedRoot, 'plugins', 'cache', 'ponytail'))).toBe(true)
+  })
+
+  it('unions enabledPlugins across shared profiles into each settings.json', async () => {
+    await mkdir(join(home, '.claude-a'), { recursive: true }); await writeFile(join(home, '.claude-a', '.claude.json'), '{}')
+    await mkdir(join(home, '.claude-b'), { recursive: true }); await writeFile(join(home, '.claude-b', '.claude.json'), '{}')
+    await writeFile(join(home, '.claude-a', 'settings.json'), JSON.stringify({ enabledPlugins: { 'x@m': true }, keep: 1 }))
+    await writeFile(join(home, '.claude-b', 'settings.json'), JSON.stringify({ enabledPlugins: { 'y@m': true } }))
+
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    const actions = planApply(pluginManifest(true, true), await discoverProfiles(home), p, undefined, sharedRoot)
+    await executeApply(actions, { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 't2' })
+
+    const aCfg = JSON.parse(await readFile(join(home, '.claude-a', 'settings.json'), 'utf8'))
+    expect(aCfg.enabledPlugins).toEqual({ 'x@m': true, 'y@m': true })
+    expect(aCfg.keep).toBe(1) // other keys preserved
+    const bCfg = JSON.parse(await readFile(join(home, '.claude-b', 'settings.json'), 'utf8'))
+    expect(bCfg.enabledPlugins).toEqual({ 'x@m': true, 'y@m': true })
+  })
+
+  it('unshare restores a real plugins dir from the pool, pool intact', async () => {
+    await mkdir(join(home, '.claude-a', 'plugins'), { recursive: true }); await writeFile(join(home, '.claude-a', '.claude.json'), '{}')
+    await writeFile(join(home, '.claude-a', 'settings.json'), '{}')
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    await executeApply(planApply(pluginManifest(true, false), await discoverProfiles(home), p, undefined, sharedRoot),
+      { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 't1' })
+    await writeFile(join(sharedRoot, 'plugins', 'marker.txt'), 'hi')
+
+    const actions = planApply(pluginManifest(false, false), await discoverProfiles(home), p, undefined, sharedRoot)
+    expect(actions.map(a => a.kind)).toContain('unshare-plugins-dir')
+    await executeApply(actions, { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 't2' })
+    expect((await lstat(join(home, '.claude-a', 'plugins'))).isSymbolicLink()).toBe(false)
+    expect(existsSync(join(home, '.claude-a', 'plugins', 'marker.txt'))).toBe(true)
+    expect(existsSync(join(sharedRoot, 'plugins', 'marker.txt'))).toBe(true)
+  })
+})
