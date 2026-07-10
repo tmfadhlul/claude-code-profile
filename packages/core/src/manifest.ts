@@ -20,6 +20,7 @@ const McpServerSchema = z.object({
 )
 
 const ProfileSchema = z.object({
+  agent: z.enum(['claude', 'codex']).optional(),
   name: z.string().min(1),
   dir: z.string().min(1),
   launcher: z.string().nullable(),

@@ -1,10 +1,6 @@
-import type { LiveProfile } from './discovery.js'
+import { liveProfileName, type LiveProfile } from './discovery.js'
 import type { Manifest, ProfileDecl } from './manifest.js'
 import { toTemplate, type Platform } from './platform.js'
-
-function profileName(dirName: string): string {
-  return dirName === '.claude' ? 'default' : dirName.slice('.claude-'.length)
-}
 
 export function buildManifest(live: LiveProfile[], platform: Platform): Manifest {
   const mcpServers: Manifest['mcpServers'] = {}
@@ -20,20 +16,23 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
       if (owner) linkVotes.set(owner.dirName, (linkVotes.get(owner.dirName) ?? 0) + 1)
     }
   const hubDirName = [...linkVotes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
-  const hub = hubDirName ? profileName(hubDirName) : null
+  const hubLive = hubDirName ? live.find(lp => lp.dirName === hubDirName) : null
+  const hub = hubLive ? liveProfileName(hubLive) : null
 
   const profiles: ProfileDecl[] = live.map(lp => {
-    const name = profileName(lp.dirName)
+    const name = liveProfileName(lp)
     const links: Record<string, string> = {}
     for (const [entry, target] of Object.entries(lp.links)) {
       const isHubLink = hubDirName && target.startsWith(live.find(o => o.dirName === hubDirName)!.dir)
       links[entry] = isHubLink ? 'hub' : toTemplate(target, platform)
     }
     return {
+      agent: lp.agent,
       name,
       dir: toTemplate(lp.dir, platform),
-      launcher: name === 'default' ? null : `cl-${name}`,
-      auth: lp.account ? ('oauth' as const) : ('env' as const),
+      launcher: lp.dirName === '.claude' || lp.dirName === '.codex' ? null
+        : lp.agent === 'codex' ? `cx-${lp.dirName.slice('.codex-'.length)}` : `cl-${name}`,
+      auth: lp.account || lp.authenticated ? ('oauth' as const) : ('env' as const),
       env: {},
       links,
       mcp: Object.keys(lp.mcpServers).sort(),

@@ -30,8 +30,11 @@ function renderPosix(pr: ProfileDecl, p: Platform): string {
       ? `  export ${k}="$(ccprofiles secrets get ${v.slice(SECRET_PREFIX.length)})"`
       : `  export ${k}="${escapePosix(v)}"`)
   }
-  const flag = pr.skipPermissions ? ' --dangerously-skip-permissions' : ''
-  lines.push(`  CLAUDE_CONFIG_DIR="${profileDirExpr(pr, p)}" claude${flag} "$@"`, '}')
+  const codex = (pr.agent ?? 'claude') === 'codex'
+  const flag = pr.skipPermissions ? codex ? ' --dangerously-bypass-approvals-and-sandbox' : ' --dangerously-skip-permissions' : ''
+  const home = codex ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'
+  const command = codex ? 'codex' : 'claude'
+  lines.push(`  ${home}="${profileDirExpr(pr, p)}" ${command}${flag} "$@"`, '}')
   return lines.join('\n')
 }
 
@@ -42,8 +45,11 @@ function renderPwsh(pr: ProfileDecl, p: Platform): string {
       ? `  $env:${k} = (ccprofiles secrets get ${v.slice(SECRET_PREFIX.length)})`
       : `  $env:${k} = "${escapePwsh(v)}"`)
   }
-  const flag = pr.skipPermissions ? ' --dangerously-skip-permissions' : ''
-  lines.push(`  $env:CLAUDE_CONFIG_DIR = "${profileDirExpr(pr, p)}"`, `  claude${flag} @args`, '}')
+  const codex = (pr.agent ?? 'claude') === 'codex'
+  const flag = pr.skipPermissions ? codex ? ' --dangerously-bypass-approvals-and-sandbox' : ' --dangerously-skip-permissions' : ''
+  const home = codex ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'
+  const command = codex ? 'codex' : 'claude'
+  lines.push(`  $env:${home} = "${profileDirExpr(pr, p)}"`, `  ${command}${flag} @args`, '}')
   return lines.join('\n')
 }
 

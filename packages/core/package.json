@@ -1,6 +1,6 @@
 {
   "name": "ccprofiles-core",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Core library for ccprofiles — discovery, manifest, secrets, apply, and LAN sync for Claude Code multi-account setups",
   "type": "module",
   "main": "./dist/index.js",
@@ -27,6 +27,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "smol-toml": "^1.7.0",
     "yaml": "^2.5.0",
     "zod": "^3.23.0"
   }

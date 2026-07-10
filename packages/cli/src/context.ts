@@ -54,7 +54,7 @@ export async function requireManifest(ctx: CliContext): Promise<Manifest> {
 }
 
 export function buildProgram(ctx: CliContext): Command {
-  const program = new Command('ccprofiles').description('Manage multiple Claude Code accounts/profiles (alias: clp)')
+  const program = new Command('ccprofiles').description('Manage multiple Claude Code and Codex accounts/profiles (alias: clp)')
   program.exitOverride() // throw instead of process.exit — required for tests
   registerProfileCommands(program, ctx)
   registerMcpCommands(program, ctx)

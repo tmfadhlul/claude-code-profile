@@ -14,7 +14,7 @@ async function req(method: string, path: string, body?: unknown): Promise<any> {
 export const api = {
   profiles: () => req('GET', '/api/profiles'),
   adopt: () => req('POST', '/api/adopt'),
-  createProfile: (name: string, from?: string) => req('POST', '/api/profiles', { name, from }),
+  createProfile: (name: string, agent: 'claude' | 'codex', from?: string) => req('POST', '/api/profiles', { name, agent, from }),
   patchProfile: (name: string, patch: object) => req('PATCH', `/api/profiles/${encodeURIComponent(name)}`, patch),
   deleteProfile: (name: string) => req('DELETE', `/api/profiles/${encodeURIComponent(name)}`),
   rc: () => req('GET', '/api/rc'),

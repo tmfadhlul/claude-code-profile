@@ -19,6 +19,7 @@ export function ProfilesPage() {
   const [servers, setServers] = useState<string[]>([])
   const [secretNames, setSecretNames] = useState<string[]>([])
   const [name, setName] = useState(''); const [from, setFrom] = useState(''); const [open, setOpen] = useState(false)
+  const [agent, setAgent] = useState<'claude' | 'codex'>('claude')
   const [editing, setEditing] = useState<ProfileRow | null>(null)
   const [deleting, setDeleting] = useState<ProfileRow | null>(null)
 
@@ -45,6 +46,12 @@ export function ProfilesPage() {
             <div className="space-y-3">
               <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="work" /></div>
               <div className="space-y-1.5">
+                <Label>Agent</Label>
+                <select className="w-full border rounded-md h-9 px-2 bg-background text-sm" value={agent} onChange={e => setAgent(e.target.value as 'claude' | 'codex')}>
+                  <option value="claude">Claude Code</option><option value="codex">Codex</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
                 <Label>Copy MCP / links from (optional)</Label>
                 <select className="w-full border rounded-md h-9 px-2 bg-background text-sm" value={from} onChange={e => setFrom(e.target.value)}>
                   <option value="">— none —</option>
@@ -54,7 +61,7 @@ export function ProfilesPage() {
             </div>
             <DialogFooter>
               <Button onClick={async () => {
-                try { await api.createProfile(name, from || undefined); toast.success(`Created ${name}`); setOpen(false); setName(''); setFrom(''); load() }
+                try { await api.createProfile(name, agent, from || undefined); toast.success(`Created ${name}`); setOpen(false); setName(''); setFrom(''); load() }
                 catch (e: any) { toast.error(e.message) }
               }}>Create</Button>
             </DialogFooter>
@@ -63,12 +70,13 @@ export function ProfilesPage() {
       </div>
       <Table>
         <TableHeader><TableRow>
-          <TableHead>Name</TableHead><TableHead>Auth</TableHead><TableHead>Account</TableHead><TableHead>MCP</TableHead><TableHead>Launcher</TableHead><TableHead>Provider</TableHead><TableHead>Env</TableHead><TableHead className="w-32" />
+          <TableHead>Name</TableHead><TableHead>Agent</TableHead><TableHead>Auth</TableHead><TableHead>Account</TableHead><TableHead>MCP</TableHead><TableHead>Launcher</TableHead><TableHead>Provider</TableHead><TableHead>Env</TableHead><TableHead className="w-32" />
         </TableRow></TableHeader>
         <TableBody>
           {rows.map(r => (
             <TableRow key={r.name}>
               <TableCell className="font-medium">{r.name}{!r.adopted && <span className="text-muted-foreground" title="not in manifest — adopt to manage"> *</span>}</TableCell>
+              <TableCell>{r.agent === 'codex' ? 'Codex' : 'Claude'}</TableCell>
               <TableCell>{r.auth}</TableCell>
               <TableCell className="text-muted-foreground">{r.account ?? '—'}</TableCell>
               <TableCell>{r.mcp}</TableCell>

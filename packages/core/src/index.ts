@@ -1,6 +1,7 @@
 export * from './platform.js'
 export * from './manifest.js'
 export * from './discovery.js'
+export * from './codex.js'
 export * from './adopt.js'
 export * from './rcblock.js'
 export * from './fsutil.js'

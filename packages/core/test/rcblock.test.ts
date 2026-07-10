@@ -74,6 +74,13 @@ describe('renderRcBlock', () => {
     const block = renderRcBlock(m, win)
     expect(block).toContain('claude --dangerously-skip-permissions @args')
   })
+  it('renders Codex launchers with CODEX_HOME and Codex bypass flag', () => {
+    const codex: Manifest = { version: 1, hub: null, mcpServers: {}, profiles: [
+      { agent: 'codex', name: 'codex-work', dir: '{home}/.codex-work', launcher: 'cx-work', auth: 'oauth', env: {}, links: {}, mcp: [], settingsEnv: {}, skipPermissions: true, sharedSessions: false },
+    ] }
+    const block = renderRcBlock(codex, mac)
+    expect(block).toContain('CODEX_HOME="$HOME/.codex-work" codex --dangerously-bypass-approvals-and-sandbox "$@"')
+  })
 })
 
 describe('upsertManagedBlock', () => {

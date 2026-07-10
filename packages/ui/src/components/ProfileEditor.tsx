@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { X } from 'lucide-react'
 
 export type ProfileRow = {
-  name: string; dir: string; auth: string; account: string | null; mcp: number
+  name: string; agent: 'claude' | 'codex'; dir: string; auth: string; account: string | null; mcp: number
   launcher: string | null; adopted: boolean
   env: Record<string, string>; links: Record<string, string>; mcpNames: string[]
   settingsEnv: Record<string, string>; liveSettingsEnv: Record<string, string>
@@ -85,7 +85,8 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
       const linksObj: Record<string, string> = {}
       for (const r of links) if (r.key.trim()) linksObj[r.key.trim()] = r.value
       await api.patchProfile(profile.name, {
-        env: fromEnvRows(env), settingsEnv: mergeProviderEnv(pform, fromEnvRows(padv)), links: linksObj, launcher: launcher.trim() || null,
+        env: fromEnvRows(env), settingsEnv: profile.agent === 'claude' ? mergeProviderEnv(pform, fromEnvRows(padv)) : undefined,
+        links: linksObj, launcher: launcher.trim() || null,
         skipPermissions: launcher.trim() ? skipPermissions : false,
       })
       for (const s of mcp.filter(s => !profile.mcpNames.includes(s))) await api.addMcp({ name: s, targets: [profile.name] })
@@ -102,26 +103,26 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
         <div className="space-y-5">
           <div className="space-y-1.5">
             <Label>Launcher function</Label>
-            <Input value={launcher} onChange={e => setLauncher(e.target.value)} placeholder="cl-work (empty = no launcher)" />
+            <Input value={launcher} onChange={e => setLauncher(e.target.value)} placeholder={`${profile.agent === 'codex' ? 'cx' : 'cl'}-work (empty = no launcher)`} />
           </div>
 
           <div className="space-y-1.5">
             <label className={cn('flex items-center gap-2 text-sm', !launcher.trim() && 'opacity-50')}>
               <input type="checkbox" checked={skipPermissions} disabled={!launcher.trim()}
                 onChange={e => setSkipPermissions(e.target.checked)} />
-              Skip all permission prompts (<span className="font-mono text-xs">--dangerously-skip-permissions</span>)
+              Skip all permission prompts (<span className="font-mono text-xs">{profile.agent === 'codex' ? '--dangerously-bypass-approvals-and-sandbox' : '--dangerously-skip-permissions'}</span>)
             </label>
             {!launcher.trim()
-              ? <p className="text-xs text-muted-foreground">No launcher — plain <span className="font-mono">claude</span> can't take this flag.</p>
+              ? <p className="text-xs text-muted-foreground">No launcher — plain <span className="font-mono">{profile.agent}</span> won't use this managed flag.</p>
               : skipPermissions && <p className="text-xs text-red-600 dark:text-red-400">⚠ Bypasses every confirmation — use only for profiles you fully trust.</p>}
           </div>
 
           <div className="space-y-1.5">
             <Label>Launcher env (exported by the shell function)</Label>
-            <EnvRowsEditor rows={env} onChange={setEnv} secretNames={secretNames} keyPlaceholder="ANTHROPIC_API_KEY" />
+            <EnvRowsEditor rows={env} onChange={setEnv} secretNames={secretNames} keyPlaceholder={profile.agent === 'codex' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} />
           </div>
 
-          <div className="space-y-1.5">
+          {profile.agent === 'claude' && <div className="space-y-1.5">
             <Label>Provider</Label>
             <p className="text-xs text-muted-foreground">Where this profile's Claude Code sends requests — written into settings.json. Secret tokens resolve from the keychain on apply.</p>
             <ProviderForm form={pform} onChange={setPform} secretNames={secretNames}
@@ -134,7 +135,7 @@ export function ProfileEditor({ profile, profiles, servers, secretNames, onClose
                 <EnvRowsEditor rows={padv} onChange={setPadv} secretNames={secretNames} keyPlaceholder="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" />
               </div>
             </details>
-          </div>
+          </div>}
 
           <div className="space-y-1.5">
             <Label>Links</Label>
