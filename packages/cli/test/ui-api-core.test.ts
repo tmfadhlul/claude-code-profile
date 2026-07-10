@@ -148,9 +148,13 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     expect(res._status).toBe(400)
   })
   it('GET /api/sessions returns pooled projects', async () => {
+    await mkdir(join(home, '.claude', 'projects', 'proj'), { recursive: true })
+    await writeFile(join(home, '.claude', 'projects', 'proj', 's1.jsonl'),
+      '{"type":"user","cwd":"/tmp/proj","message":{"content":"hi there"}}\n')
     await callApi(ctx, 'POST', '/api/adopt')
     await callApi(ctx, 'PATCH', '/api/profiles/default', { sharedSessions: true })
     const rows = (await callApi(ctx, 'GET', '/api/sessions'))._json
     expect(Array.isArray(rows)).toBe(true)
+    expect(rows.some((r: any) => r.project && Array.isArray(r.sessions))).toBe(true)
   })
 })

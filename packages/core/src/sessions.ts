@@ -1,5 +1,5 @@
 import { readdir, readFile, stat, lstat } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, type Dirent } from 'node:fs'
 import { join } from 'node:path'
 
 export interface SessionMeta {
@@ -49,12 +49,16 @@ async function parseSession(file: string): Promise<{ meta: SessionMeta; cwd: str
 async function scanProjectsDir(projectsDir: string, scope: string): Promise<ProjectSessions[]> {
   if (!existsSync(projectsDir)) return []
   const out: ProjectSessions[] = []
-  for (const proj of await readdir(projectsDir, { withFileTypes: true })) {
+  let entries: Dirent[]
+  try { entries = await readdir(projectsDir, { withFileTypes: true }) } catch { return [] }
+  for (const proj of entries) {
     if (!proj.isDirectory()) continue
     const pdir = join(projectsDir, proj.name)
     const sessions: SessionMeta[] = []
     let cwd: string | null = null
-    for (const f of await readdir(pdir)) {
+    let files: string[]
+    try { files = await readdir(pdir) } catch { continue }
+    for (const f of files) {
       if (!f.endsWith('.jsonl')) continue
       const parsed = await parseSession(join(pdir, f))
       if (!parsed) continue

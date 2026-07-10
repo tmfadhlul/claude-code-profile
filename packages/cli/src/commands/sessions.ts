@@ -1,12 +1,9 @@
 import type { Command } from 'commander'
-import { discoverProfiles, executeApply, saveManifest, scanSessions } from 'ccprofiles-core'
+import { discoverProfiles, executeApply, liveProfileName, saveManifest, scanSessions } from 'ccprofiles-core'
 import { join } from 'node:path'
 import { requireManifest, type CliContext } from '../context.js'
 import { planActions } from '../plan.js'
 
-function profileName(dirName: string): string {
-  return dirName === '.claude' ? 'default' : dirName.slice('.claude-'.length)
-}
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
 export function registerSessionCommands(program: Command, ctx: CliContext): void {
@@ -32,7 +29,7 @@ export function registerSessionCommands(program: Command, ctx: CliContext): void
     const live = await discoverProfiles(ctx.home)
     const rows = await scanSessions({
       sharedRoot: join(ctx.manifestRoot, 'shared'),
-      profiles: live.map(lp => ({ name: profileName(lp.dirName), dir: lp.dir })),
+      profiles: live.map(lp => ({ name: liveProfileName(lp), dir: lp.dir })),
     })
     if (!rows.length) { console.log('no sessions found'); return }
     for (const p of rows) {
