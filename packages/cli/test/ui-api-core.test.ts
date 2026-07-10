@@ -157,4 +157,20 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     expect(Array.isArray(rows)).toBe(true)
     expect(rows.some((r: any) => r.project && Array.isArray(r.sessions))).toBe(true)
   })
+  it('UI create/share/list works for Codex profiles', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const created = await callApi(ctx, 'POST', '/api/profiles', { name: 'work', agent: 'codex' })
+    expect(created._json.name).toBe('codex-work')
+    const dated = join(home, '.codex-work', 'sessions', '2026', '07', '10')
+    await mkdir(dated, { recursive: true })
+    await writeFile(join(dated, 'rollout-44444444-4444-4444-8444-444444444444.jsonl'),
+      '{"type":"session_meta","payload":{"id":"44444444-4444-4444-8444-444444444444","cwd":"/tmp/ui-codex"}}\n' +
+      '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"from UI"}]}}\n')
+    const shared = await callApi(ctx, 'PATCH', '/api/profiles/codex-work', { sharedSessions: true })
+    expect(shared._status).toBe(200)
+    const profile = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'codex-work')
+    expect(profile).toMatchObject({ agent: 'codex', launcher: 'cx-work', sharedSessions: true })
+    const sessions = (await callApi(ctx, 'GET', '/api/sessions'))._json
+    expect(sessions.find((p: any) => p.project === '/tmp/ui-codex')).toMatchObject({ agent: 'codex', scope: 'shared' })
+  })
 })

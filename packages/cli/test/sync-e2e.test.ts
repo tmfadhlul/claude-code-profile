@@ -35,6 +35,10 @@ beforeAll(async () => {
   await writeFile(join(macHome, '.claude-office', '.claude.json'), JSON.stringify({
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
   }))
+  await mkdir(join(macHome, '.codex-work'), { recursive: true })
+  await writeFile(join(macHome, '.codex-work', 'config.toml'),
+    '[mcp_servers.context7]\ncommand = "npx"\nargs = ["-y", "@upstash/context7-mcp"]\n')
+  await writeFile(join(macHome, '.codex-work', 'AGENTS.md'), '# codex work guidance')
   await runOn(macHome, 'adopt', '--yes')
   await runOn(macHome, 'secrets', 'set', 'z-token', 'sk-secret-value')
 
@@ -68,13 +72,16 @@ describe('cross-device sync', () => {
     expect(await runOn(winHome, 'devices')).toContain('mac')
 
     const out = await runOn(winHome, 'sync', '--from', 'mac', '--with-secrets')
-    expect(out).toContain('pulled manifest: 2 profiles')
+    expect(out).toContain('pulled manifest: 3 profiles')
 
     // manifest landed and was applied: profiles exist, mcp configured, launcher written, skill file synced
     expect(existsSync(join(winHome, '.claude-office', '.claude.json'))).toBe(true)
     const office = JSON.parse(await readFile(join(winHome, '.claude-office', '.claude.json'), 'utf8'))
     expect(Object.keys(office.mcpServers)).toEqual(['playwright'])
     expect(await readFile(rcFileFor(winHome), 'utf8')).toContain('cl-office')
+    expect(await readFile(rcFileFor(winHome), 'utf8')).toContain('cx-work')
+    expect(await readFile(join(winHome, '.codex-work', 'config.toml'), 'utf8')).toContain('[mcp_servers.context7]')
+    expect(await readFile(join(winHome, '.codex-work', 'AGENTS.md'), 'utf8')).toBe('# codex work guidance')
     expect(await readFile(join(winHome, '.claude', 'skills', 'graphify', 'SKILL.md'), 'utf8')).toBe('# graphify')
 
     // secret arrived in the client's store
@@ -89,8 +96,10 @@ describe('cross-device sync', () => {
     const gated = await runOn(fresh, 'import', bundleFile)
     expect(gated).toMatch(/execute code on your machine/)
     const out = await runOn(fresh, 'import', bundleFile, '--yes')
-    expect(out).toContain('2 profiles')
+    expect(out).toContain('3 profiles')
     expect(existsSync(join(fresh, '.claude-office', '.claude.json'))).toBe(true)
+    expect(existsSync(join(fresh, '.codex-work', 'config.toml'))).toBe(true)
+    expect(await readFile(join(fresh, '.codex-work', 'AGENTS.md'), 'utf8')).toBe('# codex work guidance')
     expect(await readFile(join(fresh, '.claude', 'skills', 'graphify', 'SKILL.md'), 'utf8')).toBe('# graphify')
   })
 })
