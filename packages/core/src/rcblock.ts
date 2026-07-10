@@ -25,6 +25,7 @@ function profileDirExpr(pr: ProfileDecl, p: Platform): string {
 
 function renderPosix(pr: ProfileDecl, p: Platform): string {
   const lines = [`${pr.launcher}() {`]
+  lines.push(`  if [ "$1" = handoff ]; then shift; command ccprofiles handoff --from ${pr.name} --to "$1"; return; fi`)
   for (const [k, v] of Object.entries(pr.env)) {
     lines.push(v.startsWith(SECRET_PREFIX)
       ? `  export ${k}="$(ccprofiles secrets get ${v.slice(SECRET_PREFIX.length)})"`
@@ -40,6 +41,7 @@ function renderPosix(pr: ProfileDecl, p: Platform): string {
 
 function renderPwsh(pr: ProfileDecl, p: Platform): string {
   const lines = [`function ${pr.launcher} {`]
+  lines.push(`  if ($args[0] -eq 'handoff') { ccprofiles handoff --from ${pr.name} --to $args[1]; return }`)
   for (const [k, v] of Object.entries(pr.env)) {
     lines.push(v.startsWith(SECRET_PREFIX)
       ? `  $env:${k} = (ccprofiles secrets get ${v.slice(SECRET_PREFIX.length)})`
