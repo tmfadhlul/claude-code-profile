@@ -1,4 +1,5 @@
 import { discoverProfiles, planApply, resolveSettingsEnv, type ApplyAction, type Manifest, type SecretsStore } from 'ccprofiles-core'
+import { join } from 'node:path'
 import { secretsStore } from './commands/secrets.js'
 import type { CliContext } from './context.js'
 
@@ -9,7 +10,7 @@ export async function planActions(ctx: CliContext, m: Manifest): Promise<ApplyAc
     store ??= await secretsStore(ctx)
     return store.get(name)
   })
-  return planApply(m, await discoverProfiles(ctx.home), ctx.platform, resolved)
+  return planApply(m, await discoverProfiles(ctx.home), ctx.platform, resolved, join(ctx.manifestRoot, 'shared'))
 }
 
 /** Resolve settingsEnv secrets without planning — cheap validation that refs exist. */
