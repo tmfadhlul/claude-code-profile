@@ -227,7 +227,8 @@ export async function executeApply(
       if (st && st.isSymbolicLink()) {
         await unlink(a.from)
       } else if (st) {
-        await backupTree(a.from, opts.backupRoot, opts.stamp)
+        const treeBackup = await backupTree(a.from, opts.backupRoot, opts.stamp)
+        if (treeBackup) backupDir ??= dirname(treeBackup)
         if (!poolExists) { await mkdir(dirname(a.to), { recursive: true }); await cp(a.from, a.to, { recursive: true }) } // seed
         await rm(a.from, { recursive: true, force: true })                                                             // adopt = no copy
       }
@@ -259,7 +260,7 @@ function describe(a: ApplyAction): string {
     case 'share-session-dir': return `share ${a.from} -> ${a.to}`
     case 'unshare-session-dir': return `unshare ${a.from} (seed from ${a.to})`
     case 'share-plugins-dir': return `share plugins ${a.from} -> ${a.to}`
-    case 'unshare-plugins-dir': return `unshare plugins ${a.from} (seed from ${a.to})`
+    case 'unshare-plugins-dir': return `unshare plugins ${a.from} (restore from ${a.to})`
     case 'set-enabled-plugins': return `set enabledPlugins (${Object.keys(a.enabledPlugins).length}) in ${a.settingsPath}`
   }
 }
