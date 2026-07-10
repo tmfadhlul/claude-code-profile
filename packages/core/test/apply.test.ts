@@ -20,9 +20,9 @@ function manifest(): Manifest {
     version: 1, hub: 'default',
     profiles: [
       { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {},
-        links: {}, mcp: ['playwright'], skipPermissions: false, sharedSessions: false },
+        links: {}, mcp: ['playwright'], skipPermissions: false, sharedSessions: false, sharedPlugins: false },
       { name: 'new', dir: '{home}/.claude-new', launcher: 'cl-new', auth: 'env', env: {}, settingsEnv: {},
-        links: { skills: 'hub' }, mcp: ['playwright'], skipPermissions: false, sharedSessions: false },
+        links: { skills: 'hub' }, mcp: ['playwright'], skipPermissions: false, sharedSessions: false, sharedPlugins: false },
     ],
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
   }
@@ -81,8 +81,8 @@ describe('planApply + executeApply', () => {
     const m: Manifest = {
       version: 1, hub: 'default', mcpServers: {},
       profiles: [
-        { agent: 'claude', name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: false },
-        { agent: 'codex', name: 'codex', dir: '{home}/.codex', launcher: 'cx-def', auth: 'oauth', env: {}, settingsEnv: {}, links: { skills: 'hub', commands: 'hub' }, mcp: [], skipPermissions: false, sharedSessions: false },
+        { agent: 'claude', name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: false, sharedPlugins: false },
+        { agent: 'codex', name: 'codex', dir: '{home}/.codex', launcher: 'cx-def', auth: 'oauth', env: {}, settingsEnv: {}, links: { skills: 'hub', commands: 'hub' }, mcp: [], skipPermissions: false, sharedSessions: false, sharedPlugins: false },
       ],
     }
     const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
@@ -117,7 +117,7 @@ describe('settingsEnv apply', () => {
   const platformFor = (home: string) => detectPlatform({ home, shell: '/bin/zsh' })
   const manifestWith = (settingsEnv: Record<string, string>): Manifest => ({
     version: 1, hub: null, mcpServers: {},
-    profiles: [{ name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv, skipPermissions: false, sharedSessions: false }],
+    profiles: [{ name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv, skipPermissions: false, sharedSessions: false, sharedPlugins: false }],
   })
 
   it('resolveSettingsEnv resolves secret refs and passes plain values', async () => {
@@ -174,7 +174,7 @@ describe('shared sessions', () => {
       version: 1, hub: null,
       profiles: [
         { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {},
-          links: {}, mcp: [], skipPermissions: false, sharedSessions: on },
+          links: {}, mcp: [], skipPermissions: false, sharedSessions: on, sharedPlugins: false },
       ],
       mcpServers: {},
     }
@@ -236,7 +236,7 @@ describe('shared sessions', () => {
     const codexManifest = (on: boolean): Manifest => ({
       version: 1, hub: null, mcpServers: {}, profiles: [{
         agent: 'codex', name: 'codex-work', dir: '{home}/.codex-work', launcher: 'cx-work', auth: 'oauth',
-        env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: on,
+        env: {}, settingsEnv: {}, links: {}, mcp: [], skipPermissions: false, sharedSessions: on, sharedPlugins: false,
       }],
     })
 

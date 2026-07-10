@@ -17,7 +17,7 @@ describe('Codex apply', () => {
     const manifest: Manifest = {
       version: 1, hub: null,
       mcpServers: { context7: { command: 'npx', args: ['-y', '@upstash/context7-mcp'] } },
-      profiles: [{ agent: 'codex', name: 'codex-work', dir: '{home}/.codex-work', launcher: 'cx-work', auth: 'oauth', env: {}, links: {}, mcp: ['context7'], settingsEnv: {}, skipPermissions: false, sharedSessions: false }],
+      profiles: [{ agent: 'codex', name: 'codex-work', dir: '{home}/.codex-work', launcher: 'cx-work', auth: 'oauth', env: {}, links: {}, mcp: ['context7'], settingsEnv: {}, skipPermissions: false, sharedSessions: false, sharedPlugins: false }],
     }
     const platform = detectPlatform({ osKind: 'darwin', home, shell: '/bin/zsh' })
     const actions = planApply(manifest, [], platform)
