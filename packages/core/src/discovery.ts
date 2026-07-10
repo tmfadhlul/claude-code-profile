@@ -15,6 +15,7 @@ export interface LiveProfile {
   links: Record<string, string>
   settingsEnv: Record<string, string>
   enabledPlugins: Record<string, boolean>
+  marketplaces: Record<string, { source: string }>
 }
 
 export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
@@ -60,6 +61,14 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
       if (s && typeof s.enabledPlugins === 'object' && s.enabledPlugins !== null)
         for (const [k, v] of Object.entries(s.enabledPlugins)) if (typeof v === 'boolean') enabledPlugins[k] = v
     } catch { /* no settings.json */ }
+    const marketplaces: Record<string, { source: string }> = {}
+    if (agent === 'claude') try {
+      const km = JSON.parse(await readFile(join(dir, 'plugins', 'known_marketplaces.json'), 'utf8'))
+      if (km && typeof km === 'object') for (const [name, v] of Object.entries<any>(km)) {
+        const repo = v?.source?.repo
+        if (typeof repo === 'string') marketplaces[name] = { source: repo }
+      }
+    } catch { /* no plugins/known_marketplaces.json */ }
     out.push({
       agent,
       dirName: e.name,
@@ -71,6 +80,7 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
       links,
       settingsEnv,
       enabledPlugins,
+      marketplaces,
     })
   }
   return out.sort((a, b) => a.dirName.localeCompare(b.dirName))

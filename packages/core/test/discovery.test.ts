@@ -64,6 +64,16 @@ describe('discoverProfiles', () => {
     const x = live.find(p => p.dirName === '.claude-x')!
     expect(x.enabledPlugins).toEqual({ 'ponytail@ponytail': true, 'off@m': false })
   })
+  it('reads marketplaces from known_marketplaces.json', async () => {
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-mkt-'))
+    await mkdir(join(h, '.claude-x', 'plugins'), { recursive: true })
+    await writeFile(join(h, '.claude-x', '.claude.json'), '{}')
+    await writeFile(join(h, '.claude-x', 'plugins', 'known_marketplaces.json'),
+      JSON.stringify({ ponytail: { source: { source: 'github', repo: 'DietrichGebert/ponytail' } } }))
+    const live = await discoverProfiles(h)
+    const x = live.find(p => p.dirName === '.claude-x')!
+    expect(x.marketplaces).toEqual({ ponytail: { source: 'DietrichGebert/ponytail' } })
+  })
   it('discovers Codex homes and reads TOML MCP servers', async () => {
     const home4 = await mkdtemp(join(tmpdir(), 'ccp-disc-codex-'))
     await mkdir(join(home4, '.codex-work'), { recursive: true })

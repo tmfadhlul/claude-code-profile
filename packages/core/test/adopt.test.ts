@@ -10,10 +10,10 @@ import type { Manifest } from '../src/manifest.js'
 const p = detectPlatform({ osKind: 'darwin', home: '/Users/x', shell: '/bin/zsh' })
 const live: LiveProfile[] = [
   { agent: 'claude', dirName: '.claude', dir: '/Users/x/.claude', configPath: '/Users/x/.claude.json',
-    account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {},
+    account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {}, marketplaces: {},
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } } },
   { agent: 'claude', dirName: '.claude-oauth', dir: '/Users/x/.claude-oauth', configPath: '/Users/x/.claude-oauth/.claude.json',
-    account: 'a@b.c', links: { skills: '/Users/x/.claude/skills' }, settingsEnv: {}, enabledPlugins: {},
+    account: 'a@b.c', links: { skills: '/Users/x/.claude/skills' }, settingsEnv: {}, enabledPlugins: {}, marketplaces: {},
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] }, shadcn: { command: 'npx', args: ['shadcn@latest', 'mcp'] } } },
 ]
 
