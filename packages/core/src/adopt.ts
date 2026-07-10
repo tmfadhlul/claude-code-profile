@@ -44,7 +44,9 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
       settingsEnv: lp.settingsEnv,
       skipPermissions: false,
       sharedSessions: false,
-      plugins: Object.entries(lp.enabledPlugins ?? {}).filter(([, v]) => v).map(([k]) => k).sort(),
+      plugins: Object.entries(lp.enabledPlugins ?? {})
+        .filter(([k, v]) => v && marketplaces[k.slice(k.lastIndexOf('@') + 1)])
+        .map(([k]) => k).sort(),
     }
   })
 

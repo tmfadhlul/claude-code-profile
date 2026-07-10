@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { buildManifest, preserveSecretRefs } from '../src/adopt.js'
 import { detectPlatform } from '../src/platform.js'
 import { discoverProfiles, type LiveProfile } from '../src/discovery.js'
-import type { Manifest } from '../src/manifest.js'
+import { parseManifest, serializeManifest, type Manifest } from '../src/manifest.js'
 
 const p = detectPlatform({ osKind: 'darwin', home: '/Users/x', shell: '/bin/zsh' })
 const live: LiveProfile[] = [
@@ -40,6 +40,20 @@ describe('buildManifest', () => {
     await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' } }))
     const m = buildManifest(await discoverProfiles(home), detectPlatform({ home, shell: '/bin/zsh' }))
     expect(m.profiles[0].settingsEnv.ANTHROPIC_BASE_URL).toBe('https://api.z.ai/api/anthropic')
+  })
+
+  it('drops plugin ids whose marketplace has no known_marketplaces entry (orphan filter)', () => {
+    const liveWithPlugins: LiveProfile[] = [
+      { agent: 'claude', dirName: '.claude', dir: '/Users/x/.claude', configPath: '/Users/x/.claude.json',
+        account: 'a@b.c', links: {}, settingsEnv: {}, mcpServers: {},
+        enabledPlugins: { 'good@known-mkt': true, 'orphan@stale-mkt': true, 'disabled@known-mkt': false },
+        marketplaces: { 'known-mkt': { source: 'someorg/known-mkt' } } },
+    ]
+    const m = buildManifest(liveWithPlugins, p)
+    expect(m.profiles[0].plugins).toEqual(['good@known-mkt'])
+    expect(Object.keys(m.marketplaces)).toEqual(['known-mkt'])
+    // must round-trip through parse/serialize without throwing "references undefined marketplace"
+    expect(() => parseManifest(serializeManifest(m))).not.toThrow()
   })
 })
 
