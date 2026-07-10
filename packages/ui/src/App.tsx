@@ -7,12 +7,14 @@ import { SecretsPage } from '@/pages/SecretsPage'
 import { RcPage } from '@/pages/RcPage'
 import { SyncPage } from '@/pages/SyncPage'
 import { DoctorPage } from '@/pages/DoctorPage'
+import { SessionsPage } from '@/pages/SessionsPage'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, Boxes, KeyRound, RefreshCw, Stethoscope, Terminal } from 'lucide-react'
+import { LayoutDashboard, Users, Boxes, KeyRound, RefreshCw, Stethoscope, Terminal, History } from 'lucide-react'
 
 const TABS = [
   ['status', 'Status', LayoutDashboard],
   ['profiles', 'Profiles', Users],
+  ['sessions', 'Sessions', History],
   ['mcp', 'MCP', Boxes],
   ['secrets', 'Secrets', KeyRound],
   ['rc', 'Shell RC', Terminal],
@@ -43,6 +45,7 @@ export default function App() {
       <main className="flex-1 overflow-auto p-8">
         {tab === 'status' && <StatusPage />}
         {tab === 'profiles' && <ProfilesPage />}
+        {tab === 'sessions' && <SessionsPage />}
         {tab === 'mcp' && <McpPage />}
         {tab === 'secrets' && <SecretsPage />}
         {tab === 'rc' && <RcPage />}
