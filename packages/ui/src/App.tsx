@@ -3,18 +3,19 @@ import { Toaster } from '@/components/ui/sonner'
 import { StatusPage } from '@/pages/StatusPage'
 import { ProfilesPage } from '@/pages/ProfilesPage'
 import { McpPage } from '@/pages/McpPage'
+import { PluginsPage } from '@/pages/PluginsPage'
 import { SecretsPage } from '@/pages/SecretsPage'
 import { RcPage } from '@/pages/RcPage'
 import { SyncPage } from '@/pages/SyncPage'
 import { DoctorPage } from '@/pages/DoctorPage'
 import { SessionsPage } from '@/pages/SessionsPage'
 import { cn } from '@/lib/utils'
-import { Activity, Boxes, History, KeyRound, LayoutDashboard, RefreshCw, Stethoscope, Terminal, Users } from 'lucide-react'
+import { Activity, Boxes, History, KeyRound, LayoutDashboard, Puzzle, RefreshCw, Stethoscope, Terminal, Users } from 'lucide-react'
 
 const NAV = [
   { label: 'Overview', items: [['status', 'Status', LayoutDashboard]] },
   { label: 'Workspace', items: [['profiles', 'Profiles', Users], ['sessions', 'Sessions', History]] },
-  { label: 'Configuration', items: [['mcp', 'MCP', Boxes], ['secrets', 'Secrets', KeyRound], ['rc', 'Shell RC', Terminal]] },
+  { label: 'Configuration', items: [['mcp', 'MCP', Boxes], ['plugins', 'Plugins', Puzzle], ['secrets', 'Secrets', KeyRound], ['rc', 'Shell RC', Terminal]] },
   { label: 'System', items: [['sync', 'Sync', RefreshCw], ['doctor', 'Doctor', Stethoscope]] },
 ] as const
 
@@ -28,6 +29,7 @@ export default function App() {
     if (tab === 'profiles') return <ProfilesPage />
     if (tab === 'sessions') return <SessionsPage />
     if (tab === 'mcp') return <McpPage />
+    if (tab === 'plugins') return <PluginsPage />
     if (tab === 'secrets') return <SecretsPage />
     if (tab === 'rc') return <RcPage />
     if (tab === 'sync') return <SyncPage />
