@@ -14,6 +14,7 @@ export interface LiveProfile {
   mcpServers: Record<string, McpServerDef>
   links: Record<string, string>
   settingsEnv: Record<string, string>
+  enabledPlugins: Record<string, boolean>
 }
 
 export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
@@ -51,10 +52,13 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
       }
     }
     const settingsEnv: Record<string, string> = {}
+    const enabledPlugins: Record<string, boolean> = {}
     if (agent === 'claude') try {
       const s = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8'))
       if (s && typeof s.env === 'object' && s.env !== null)
         for (const [k, v] of Object.entries(s.env)) if (typeof v === 'string') settingsEnv[k] = v
+      if (s && typeof s.enabledPlugins === 'object' && s.enabledPlugins !== null)
+        for (const [k, v] of Object.entries(s.enabledPlugins)) if (typeof v === 'boolean') enabledPlugins[k] = v
     } catch { /* no settings.json */ }
     out.push({
       agent,
@@ -66,6 +70,7 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
       mcpServers: agent === 'claude' ? cfg?.mcpServers ?? {} : await readCodexMcpServers(configPath),
       links,
       settingsEnv,
+      enabledPlugins,
     })
   }
   return out.sort((a, b) => a.dirName.localeCompare(b.dirName))

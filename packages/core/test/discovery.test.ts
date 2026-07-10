@@ -54,6 +54,16 @@ describe('discoverProfiles', () => {
     const live = await discoverProfiles(home3)
     expect(live[0].settingsEnv).toEqual({})
   })
+  it('reads enabledPlugins from a profile settings.json', async () => {
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-plugins-'))
+    await mkdir(join(h, '.claude-x'), { recursive: true })
+    await writeFile(join(h, '.claude-x', '.claude.json'), '{}')
+    await writeFile(join(h, '.claude-x', 'settings.json'),
+      JSON.stringify({ enabledPlugins: { 'ponytail@ponytail': true, 'off@m': false } }))
+    const live = await discoverProfiles(h)
+    const x = live.find(p => p.dirName === '.claude-x')!
+    expect(x.enabledPlugins).toEqual({ 'ponytail@ponytail': true, 'off@m': false })
+  })
   it('discovers Codex homes and reads TOML MCP servers', async () => {
     const home4 = await mkdtemp(join(tmpdir(), 'ccp-disc-codex-'))
     await mkdir(join(home4, '.codex-work'), { recursive: true })
