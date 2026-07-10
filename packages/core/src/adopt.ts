@@ -39,7 +39,6 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
       settingsEnv: lp.settingsEnv,
       skipPermissions: false,
       sharedSessions: false,
-      sharedPlugins: false,
     }
   })
 

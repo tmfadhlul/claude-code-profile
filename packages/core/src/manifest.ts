@@ -31,7 +31,6 @@ const ProfileSchema = z.object({
   settingsEnv: z.record(z.string()).default({}),
   skipPermissions: z.boolean().default(false),
   sharedSessions: z.boolean().default(false),
-  sharedPlugins: z.boolean().default(false),
 })
 
 const ManifestSchema = z.object({

