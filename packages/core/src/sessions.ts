@@ -19,6 +19,25 @@ export interface ProjectSessions {
   sessions: SessionMeta[]
 }
 
+export interface TranscriptEntry {
+  id: string
+  role: 'user' | 'assistant' | 'tool'
+  text: string
+  label: string | null
+  timestamp: string | null
+}
+
+export interface SessionTranscript {
+  id: string
+  agent: 'claude' | 'codex'
+  scope: string
+  project: string
+  messages: TranscriptEntry[]
+}
+
+const SAFE_SESSION_ID = /^[A-Za-z0-9_-]{1,160}$/
+const MAX_ENTRY_CHARS = 100_000
+
 /** Best-effort decode of Claude Code's project dir name (cwd from a record is preferred). */
 export function decodeProjectDir(name: string): string {
   return name.replace(/^-/, '/').replace(/-/g, '/')
@@ -76,8 +95,104 @@ async function scanProjectsDir(projectsDir: string, scope: string): Promise<Proj
 function messageText(content: unknown): string | null {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return null
-  const item = content.find((x: any) => x?.type === 'input_text' || x?.type === 'text')
-  return typeof item?.text === 'string' ? item.text : null
+  const texts = content
+    .filter((x: any) => x?.type === 'input_text' || x?.type === 'output_text' || x?.type === 'text')
+    .map((x: any) => x.text)
+    .filter((x: unknown): x is string => typeof x === 'string')
+  return texts.length ? texts.join('\n\n') : null
+}
+
+function limited(text: string): string {
+  return text.length <= MAX_ENTRY_CHARS ? text : `${text.slice(0, MAX_ENTRY_CHARS)}\n\n[entry truncated for display]`
+}
+
+function toolText(value: unknown): string {
+  if (typeof value === 'string') return value
+  try { return JSON.stringify(value, null, 2) } catch { return String(value) }
+}
+
+function pushEntry(
+  messages: TranscriptEntry[],
+  role: TranscriptEntry['role'],
+  text: string | null,
+  label: string | null,
+  timestamp: unknown,
+): void {
+  const clean = text?.trim()
+  if (!clean) return
+  if (role === 'user' && /^<(system-reminder|local-command-caveat|command-name)>/i.test(clean)) return
+  const previous = messages.at(-1)
+  if (previous?.role === role && previous.text === clean) return
+  messages.push({
+    id: String(messages.length + 1), role, text: limited(clean), label,
+    timestamp: typeof timestamp === 'string' ? timestamp : null,
+  })
+}
+
+async function parseClaudeTranscript(file: string, scope: string): Promise<SessionTranscript | null> {
+  let raw: string
+  try { raw = await readFile(file, 'utf8') } catch { return null }
+  const id = file.split(/[\\/]/).pop()!.replace(/\.jsonl$/, '')
+  const messages: TranscriptEntry[] = []
+  let project = '(unknown project)'
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    let rec: any
+    try { rec = JSON.parse(line) } catch { continue }
+    if (project === '(unknown project)' && typeof rec.cwd === 'string') project = rec.cwd
+    const content = rec.message?.content
+    if (rec.type === 'user') {
+      pushEntry(messages, 'user', messageText(content), null, rec.timestamp)
+      if (Array.isArray(content)) for (const block of content) {
+        if (block?.type === 'tool_result')
+          pushEntry(messages, 'tool', messageText(block.content) ?? toolText(block.content), 'Tool result', rec.timestamp)
+      }
+    } else if (rec.type === 'assistant') {
+      pushEntry(messages, 'assistant', messageText(content), null, rec.timestamp)
+      if (Array.isArray(content)) for (const block of content) {
+        if (block?.type === 'tool_use')
+          pushEntry(messages, 'tool', toolText(block.input), typeof block.name === 'string' ? block.name : 'Tool call', rec.timestamp)
+      }
+    }
+  }
+  return { id, agent: 'claude', scope, project, messages }
+}
+
+async function parseCodexTranscript(file: string, scope: string): Promise<SessionTranscript | null> {
+  let raw: string
+  try { raw = await readFile(file, 'utf8') } catch { return null }
+  const records: any[] = []
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    try { records.push(JSON.parse(line)) } catch { /* malformed line */ }
+  }
+  const filename = file.split(/[\\/]/).pop()!.replace(/\.jsonl$/, '')
+  let id = filename.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? filename
+  let project = '(unknown project)'
+  const hasResponseMessages = records.some(rec => rec?.type === 'response_item' && rec?.payload?.type === 'message')
+  const messages: TranscriptEntry[] = []
+  for (const rec of records) {
+    const payload = rec?.payload
+    if (rec?.type === 'session_meta') {
+      if (typeof payload?.id === 'string') id = payload.id
+      else if (typeof payload?.session_id === 'string') id = payload.session_id
+      if (typeof payload?.cwd === 'string') project = payload.cwd
+      continue
+    }
+    if (project === '(unknown project)' && rec?.type === 'turn_context' && typeof payload?.cwd === 'string') project = payload.cwd
+    if (rec?.type === 'response_item') {
+      if (payload?.type === 'message' && (payload.role === 'user' || payload.role === 'assistant'))
+        pushEntry(messages, payload.role, messageText(payload.content), null, rec.timestamp)
+      else if (payload?.type === 'function_call' || payload?.type === 'custom_tool_call' || payload?.type === 'local_shell_call')
+        pushEntry(messages, 'tool', toolText(payload.arguments ?? payload.input ?? payload), payload.name ?? payload.type, rec.timestamp)
+      else if (payload?.type === 'function_call_output' || payload?.type === 'custom_tool_call_output')
+        pushEntry(messages, 'tool', toolText(payload.output), 'Tool result', rec.timestamp)
+    } else if (!hasResponseMessages && rec?.type === 'event_msg') {
+      if (payload?.type === 'user_message') pushEntry(messages, 'user', payload.message, null, rec.timestamp)
+      else if (payload?.type === 'agent_message') pushEntry(messages, 'assistant', payload.message, null, rec.timestamp)
+    }
+  }
+  return { id, agent: 'codex', scope, project, messages }
 }
 
 async function parseCodexSession(file: string): Promise<{ meta: SessionMeta; cwd: string | null } | null> {
@@ -131,6 +246,17 @@ async function codexSessionFiles(dir: string): Promise<string[]> {
   return out
 }
 
+async function claudeSessionFile(projectsDir: string, id: string): Promise<string | null> {
+  let projects: Dirent[]
+  try { projects = await readdir(projectsDir, { withFileTypes: true }) } catch { return null }
+  for (const project of projects) {
+    if (!project.isDirectory()) continue
+    const file = join(projectsDir, project.name, `${id}.jsonl`)
+    try { if ((await stat(file)).isFile()) return file } catch { /* keep looking */ }
+  }
+  return null
+}
+
 async function scanCodexSessionsDir(sessionsDir: string, scope: string): Promise<ProjectSessions[]> {
   const byProject = new Map<string, SessionMeta[]>()
   for (const file of await codexSessionFiles(sessionsDir)) {
@@ -163,4 +289,34 @@ export async function scanSessions(opts: {
       : await scanProjectsDir(sessionDir, p.name))
   }
   return out
+}
+
+/** Read visible conversation and tool activity for one known managed session. */
+export async function readSessionTranscript(opts: {
+  sharedRoot: string
+  profiles: { name: string; dir: string; agent?: 'claude' | 'codex' }[]
+  agent: 'claude' | 'codex'
+  scope: string
+  id: string
+}): Promise<SessionTranscript | null> {
+  if (!SAFE_SESSION_ID.test(opts.id)) return null
+  let root: string
+  if (opts.scope === 'shared') root = join(opts.sharedRoot, opts.agent === 'codex' ? 'sessions' : 'projects')
+  else {
+    const profile = opts.profiles.find(p => p.name === opts.scope && (p.agent ?? 'claude') === opts.agent)
+    if (!profile) return null
+    root = join(profile.dir, opts.agent === 'codex' ? 'sessions' : 'projects')
+    try { if ((await lstat(root)).isSymbolicLink()) return null } catch { return null }
+  }
+  if (opts.agent === 'claude') {
+    const file = await claudeSessionFile(root, opts.id)
+    return file ? parseClaudeTranscript(file, opts.scope) : null
+  }
+  const files = await codexSessionFiles(root)
+  files.sort((a, b) => Number(!a.includes(opts.id)) - Number(!b.includes(opts.id)))
+  for (const file of files) {
+    const transcript = await parseCodexTranscript(file, opts.scope)
+    if (transcript?.id === opts.id) return transcript
+  }
+  return null
 }
