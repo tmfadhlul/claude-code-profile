@@ -20,9 +20,9 @@ function manifest(): Manifest {
     version: 1, hub: 'default',
     profiles: [
       { name: 'default', dir: '{home}/.claude', launcher: null, auth: 'oauth', env: {}, settingsEnv: {},
-        links: {}, mcp: ['playwright'], skipPermissions: false },
+        links: {}, mcp: ['playwright'], skipPermissions: false, sharedSessions: false },
       { name: 'new', dir: '{home}/.claude-new', launcher: 'cl-new', auth: 'env', env: {}, settingsEnv: {},
-        links: { skills: 'hub' }, mcp: ['playwright'], skipPermissions: false },
+        links: { skills: 'hub' }, mcp: ['playwright'], skipPermissions: false, sharedSessions: false },
     ],
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
   }

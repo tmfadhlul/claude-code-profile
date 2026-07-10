@@ -104,6 +104,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       mcp: src ? [...src.mcp] : [],
       settingsEnv: {},
       skipPermissions: false,
+      sharedSessions: false,
     })
     assertSafe(m)
     await saveManifest(ctx.manifestRoot, m)

@@ -9,7 +9,7 @@ const sample = {
   hub: 'default',
   profiles: [{
     name: 'oauth', dir: '{home}/.claude-oauth', launcher: 'cl-auth',
-    auth: 'oauth' as const, env: {}, links: { skills: 'hub', commands: 'hub' }, mcp: ['playwright'], settingsEnv: {}, skipPermissions: false,
+    auth: 'oauth' as const, env: {}, links: { skills: 'hub', commands: 'hub' }, mcp: ['playwright'], settingsEnv: {}, skipPermissions: false, sharedSessions: false,
   }],
   mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } },
 }
@@ -147,5 +147,32 @@ profiles:
 mcpServers: {}
 `)
     expect(noFlag.profiles[0].skipPermissions).toBe(false)
+  })
+
+  it('sharedSessions parses and defaults to false', () => {
+    const withFlag = parseManifest(`
+version: 1
+hub: null
+profiles:
+  - name: a
+    dir: '{home}/.claude-a'
+    launcher: cl-a
+    auth: env
+    sharedSessions: true
+mcpServers: {}
+`)
+    expect(withFlag.profiles[0].sharedSessions).toBe(true)
+
+    const noFlag = parseManifest(`
+version: 1
+hub: null
+profiles:
+  - name: b
+    dir: '{home}/.claude-b'
+    launcher: cl-b
+    auth: env
+mcpServers: {}
+`)
+    expect(noFlag.profiles[0].sharedSessions).toBe(false)
   })
 })
