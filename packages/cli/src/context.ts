@@ -8,6 +8,7 @@ import { registerSecretsCommands } from './commands/secrets.js'
 import { registerManifestCommands } from './commands/manifest.js'
 import { registerSyncCommands } from './commands/sync.js'
 import { registerBundleCommands } from './commands/bundle.js'
+import { registerSessionCommands } from './commands/sessions.js'
 import { registerUiCommand } from './ui/command.js'
 
 export interface CliContext {
@@ -57,6 +58,7 @@ export function buildProgram(ctx: CliContext): Command {
   const program = new Command('ccprofiles').description('Manage multiple Claude Code and Codex accounts/profiles (alias: clp)')
   program.exitOverride() // throw instead of process.exit — required for tests
   registerProfileCommands(program, ctx)
+  registerSessionCommands(program, ctx)
   registerMcpCommands(program, ctx)
   registerSecretsCommands(program, ctx)
   registerManifestCommands(program, ctx)
