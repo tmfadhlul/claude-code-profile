@@ -4,12 +4,17 @@ import type { Manifest, ProfileDecl } from './manifest.js'
 import { toTemplate, type Platform } from './platform.js'
 import { CLAUDE_SHARED_ENTRIES, CODEX_SHARED_ENTRIES } from './apply.js'
 
-export function buildManifest(live: LiveProfile[], platform: Platform): Manifest {
-  // Same pool root planApply uses by default (join(home, '.ccprofiles', 'shared')). A
-  // profile-dir entry symlinked to <sharedRoot>/<entry> is a pooled session dir, not a
-  // plain link — recording it as a link would make the next apply think sharing is off
-  // and "unshare" it, copying the whole shared pool back into this one profile's dir.
-  const sharedRoot = join(platform.home, '.ccprofiles', 'shared')
+export function buildManifest(
+  live: LiveProfile[],
+  platform: Platform,
+  sharedRoot: string = join(platform.home, '.ccprofiles', 'shared'),
+): Manifest {
+  // Same pool root planApply uses by default (join(home, '.ccprofiles', 'shared')), but
+  // callers with a custom CCPROFILES_HOME should pass join(ctx.manifestRoot, 'shared')
+  // instead. A profile-dir entry symlinked to <sharedRoot>/<entry> is a pooled session
+  // dir, not a plain link — recording it as a link would make the next apply think
+  // sharing is off and "unshare" it, copying the whole shared pool back into this one
+  // profile's dir.
 
   const mcpServers: Manifest['mcpServers'] = {}
   for (const lp of live)

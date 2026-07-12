@@ -54,7 +54,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
 
   // ── adopt / profiles / status / apply / doctor ──────────────────────────────
   add('POST', /^\/api\/adopt$/, async (_m, _req, res) => {
-    const manifest = buildManifest(await discoverProfiles(ctx.home), ctx.platform)
+    const manifest = buildManifest(await discoverProfiles(ctx.home), ctx.platform, join(ctx.manifestRoot, 'shared'))
     if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
       const oldM = await loadManifest(ctx.manifestRoot)
       let store: Awaited<ReturnType<typeof secretsStore>> | null = null

@@ -23,7 +23,7 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
     .option('--yes', 'write without confirmation')
     .action(async (opts: { yes?: boolean }) => {
       const live = await discoverProfiles(ctx.home)
-      const manifest = buildManifest(live, ctx.platform)
+      const manifest = buildManifest(live, ctx.platform, join(ctx.manifestRoot, 'shared'))
       console.log(`Discovered ${manifest.profiles.length} profiles, ${Object.keys(manifest.mcpServers).length} mcp servers.`)
       if (!opts.yes) { console.log('Re-run with --yes to write the manifest.'); return }
       if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
