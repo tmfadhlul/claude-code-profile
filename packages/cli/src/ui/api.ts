@@ -124,7 +124,21 @@ export function buildRoutes(ctx: CliContext): Route[] {
     const name = decodeURIComponent(mtch[1])
     const pr = m.profiles.find(p => p.name === name)
     if (!pr) throw new HttpError(404, `unknown profile: ${name}`)
-    const body = await readJson<{ env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null; settingsEnv?: Record<string, string>; skipPermissions?: boolean; sharedSessions?: boolean }>(req)
+    const body = await readJson<{
+      env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null
+      settingsEnv?: Record<string, string>; skipPermissions?: boolean; sharedSessions?: boolean
+      mcp?: string[]
+    }>(req)
+    if (body.mcp !== undefined) {
+      if (!Array.isArray(body.mcp) || !body.mcp.every(v => typeof v === 'string')) throw new HttpError(400, 'mcp must be an array of strings')
+      for (const s of body.mcp) if (!m.mcpServers[s]) throw new HttpError(400, `unknown mcp server: ${s}`)
+      const nextMcp = [...new Set(body.mcp)]
+      const removed = pr.mcp.filter(s => !nextMcp.includes(s))
+      pr.mcp = nextMcp
+      // Mirror DELETE /api/mcp/:name's registry cleanup: a server no longer referenced by any
+      // profile after this batch change is dropped, same as it would be via N separate rm calls.
+      for (const s of removed) if (!m.profiles.some(p => p.mcp.includes(s))) delete m.mcpServers[s]
+    }
     if (body.env) {
       if (!Object.values(body.env).every(v => typeof v === 'string')) throw new HttpError(400, 'env values must be strings')
       pr.env = body.env
@@ -150,8 +164,8 @@ export function buildRoutes(ctx: CliContext): Route[] {
     assertSafe(m)
     try { await planActionsPreflight(ctx, m) } catch (e) { throw new HttpError(400, (e as Error).message) }
     await saveManifest(ctx.manifestRoot, m)
-    await applyAndReport(m)
-    sendJson(res, 200, { ok: true })
+    const r = await applyAndReport(m) // single save+apply for the whole batch (env/links/mcp/... together)
+    sendJson(res, 200, { ok: true, performed: r.performed, backupDir: r.backupDir })
   })
 
   add('DELETE', /^\/api\/profiles\/([^/]+)$/, async (mtch, _req, res) => {
@@ -440,6 +454,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
       }
     }
     const store = await secretsStore(ctx)
+    if ((await store.get(name)) === null) throw new HttpError(404, 'not found')
     await store.delete(name)
     sendJson(res, 200, { ok: true })
   })

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, symlink, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readSessionTranscript, scanSessions } from '../src/sessions.js'
+import { readSessionTranscript, scanSessions, sessionScanCacheStats } from '../src/sessions.js'
 
 let home: string
 beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'ccp-sess-')) })
@@ -85,6 +85,36 @@ describe('scanSessions', () => {
     })
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ agent: 'codex', scope: 'shared', project: '/tmp/shared-codex' })
+  })
+
+  it('caches unchanged files across scans and re-parses a file after its mtime changes', async () => {
+    const sharedRoot = join(home, '.ccprofiles', 'shared')
+    const pdir = join(sharedRoot, 'projects', 'encoded-proj')
+    await mkdir(pdir, { recursive: true })
+    const file = join(pdir, 'aaaaaaaa-0000.jsonl')
+    await writeFile(file, '{"type":"user","cwd":"/tmp/proj","message":{"content":"hello world"}}\n')
+
+    const first = await scanSessions({ sharedRoot, profiles: [] })
+    expect(first[0].sessions[0].messageCount).toBe(1)
+    const afterFirst = sessionScanCacheStats()
+
+    // Second scan of the identical file: same results, and it must come from cache (no new miss).
+    const second = await scanSessions({ sharedRoot, profiles: [] })
+    expect(second).toEqual(first)
+    const afterSecond = sessionScanCacheStats()
+    expect(afterSecond.hits).toBeGreaterThan(afterFirst.hits)
+    expect(afterSecond.misses).toBe(afterFirst.misses)
+
+    // Touch the file (new content + bumped mtime): must be re-parsed, not served stale from cache.
+    await writeFile(file,
+      '{"type":"user","cwd":"/tmp/proj","message":{"content":"hello world"}}\n' +
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}\n')
+    const future = new Date(Date.now() + 60_000)
+    await utimes(file, future, future)
+    const third = await scanSessions({ sharedRoot, profiles: [] })
+    expect(third[0].sessions[0].messageCount).toBe(2)
+    const afterThird = sessionScanCacheStats()
+    expect(afterThird.misses).toBeGreaterThan(afterSecond.misses)
   })
 })
 

@@ -154,6 +154,30 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { sharedSessions: 'yes' })
     expect(res._status).toBe(400)
   })
+  it('PATCH with mcp:[...] batches env + mcp-set changes into a single save+apply', async () => {
+    await callApi(ctx, 'POST', '/api/adopt') // default profile starts with mcp: ['playwright']
+    await callApi(ctx, 'POST', '/api/mcp', { name: 'extra', command: 'npx', targets: [] }) // define, unattached
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { env: { FOO: 'bar' }, mcp: ['extra'] })
+    expect(res._status).toBe(200)
+    // The route applies once for the whole batch — a single planActions+executeApply cycle, not
+    // one per changed field/server. Its result (performed/backupDir) is surfaced directly.
+    expect(res._json).toHaveProperty('performed')
+    expect(res._json).toHaveProperty('backupDir')
+    const row = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'default')
+    expect(row.mcpNames).toEqual(['extra'])
+    expect(row.env).toEqual({ FOO: 'bar' })
+    // 'playwright' is no longer referenced by any profile after the swap — dropped from the
+    // registry, mirroring what N sequential DELETE /api/mcp calls would have done.
+    const mcp = (await callApi(ctx, 'GET', '/api/mcp'))._json
+    expect(mcp.servers).toEqual(['extra'])
+  })
+  it('PATCH with an unknown mcp server name 400s and does not touch the manifest', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const res = await callApi(ctx, 'PATCH', '/api/profiles/default', { mcp: ['ghost'] })
+    expect(res._status).toBe(400)
+    const row = (await callApi(ctx, 'GET', '/api/profiles'))._json.find((p: any) => p.name === 'default')
+    expect(row.mcpNames).toEqual(['playwright'])
+  })
   it('GET /api/sessions returns pooled projects', async () => {
     await mkdir(join(home, '.claude', 'projects', 'proj'), { recursive: true })
     await writeFile(join(home, '.claude', 'projects', 'proj', 's1.jsonl'),

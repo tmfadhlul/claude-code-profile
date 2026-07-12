@@ -32,6 +32,14 @@ describe('ui api: secrets', () => {
     const res = await callApi(ctx, 'GET', '/api/secrets/nope')
     expect(res._status).toBe(404)
   })
+  it('delete of missing secret 404s instead of silently succeeding', async () => {
+    const res = await callApi(ctx, 'DELETE', '/api/secrets/nope')
+    expect(res._status).toBe(404)
+  })
+  it('PUT with an oversized body 413s', async () => {
+    const res = await callApi(ctx, 'PUT', '/api/secrets/api-key', { value: 'x'.repeat(6 * 1024 * 1024) })
+    expect(res._status).toBe(413)
+  })
   it('migrate moves rc keys', async () => {
     await seedRc(home, envKeyLine('ANTHROPIC_API_KEY', 'sk-ant-LEGACY') + '\n')
     const res = await callApi(ctx, 'POST', '/api/secrets/migrate')

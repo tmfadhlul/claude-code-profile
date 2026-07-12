@@ -7,9 +7,21 @@ export class BadRequest extends HttpError {
   constructor(message = 'invalid request') { super(400, message) }
 }
 
+/** Request bodies above this size are rejected outright — the UI never sends anything close to
+ *  this large, so a request over the cap is either a bug or someone hammering the local API. */
+export const MAX_BODY_BYTES = 5 * 1024 * 1024
+
 export async function readBody(req: IncomingMessage): Promise<string> {
+  const declared = Number(req.headers['content-length'])
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw new HttpError(413, 'request too large')
   const chunks: Buffer[] = []
-  for await (const c of req) chunks.push(c as Buffer)
+  let total = 0
+  for await (const c of req) {
+    const buf = c as Buffer
+    total += buf.length
+    if (total > MAX_BODY_BYTES) throw new HttpError(413, 'request too large')
+    chunks.push(buf)
+  }
   return Buffer.concat(chunks).toString('utf8')
 }
 
