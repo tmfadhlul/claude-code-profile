@@ -258,6 +258,8 @@ npm test        # vitest — unit + e2e (incl. an in-process two-machine sync te
 npm run build   # builds core + cli + the dashboard, bundled into the CLI
 ```
 
+Root `package.json` pins `vite` to `8.1.4` via `overrides` so every workspace resolves the exact same (patched) build tool instead of whatever range each transitive dependency requests — avoids duplicate installs and keeps `packages/ui`'s dev server on a known-good version. Bump it deliberately when a newer vite is verified against the dashboard build.
+
 ## Support
 
 If ccprofiles saves you time, [buy me a coffee on Ko-fi](https://ko-fi.com/teukufadh).
