@@ -21,7 +21,7 @@ export async function loadDevices(root: string): Promise<DeviceEntry[]> {
 }
 
 export async function saveDevices(root: string, list: DeviceEntry[]): Promise<void> {
-  await atomicWrite(join(root, 'devices.json'), JSON.stringify(list, null, 2))
+  await atomicWrite(join(root, 'devices.json'), JSON.stringify(list, null, 2), { mode: 0o600 })
 }
 
 /** Keep secret-bearing files out of the manifest repo's auto-commits. */

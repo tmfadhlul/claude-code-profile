@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, readdir, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { atomicWrite, backupFiles } from '../src/fsutil.js'
@@ -11,6 +11,20 @@ describe('fsutil', () => {
     await atomicWrite(f, '{"x":1}')
     expect(await readFile(f, 'utf8')).toBe('{"x":1}')
     expect((await readdir(dir)).filter(n => n.includes('ccp-tmp'))).toEqual([])
+  })
+  it('atomicWrite honors an explicit mode', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ccp-'))
+    const f = join(dir, 'secret.json')
+    await atomicWrite(f, '{"x":1}', { mode: 0o600 })
+    const st = await stat(f)
+    expect(st.mode & 0o777).toBe(0o600)
+  })
+  it('atomicWrite defaults to 0644 when no mode is given', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ccp-'))
+    const f = join(dir, 'plain.json')
+    await atomicWrite(f, '{"x":1}')
+    const st = await stat(f)
+    expect(st.mode & 0o777).toBe(0o644)
   })
   it('backupFiles copies existing, skips missing', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ccp-'))
