@@ -3,6 +3,8 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light tokens (default). Same values re-asserted under [data-theme="light"] so an
+     explicit toggle always wins over prefers-color-scheme. */
   :root {
     --background: 0.978 0.012 83; --foreground: 0.205 0.025 57;
     --card: 0.995 0.006 83; --card-foreground: 0.205 0.025 57;
@@ -13,7 +15,52 @@
     --accent: 0.91 0.043 71; --accent-foreground: 0.27 0.032 55;
     --destructive: 0.53 0.19 28; --destructive-foreground: 0.985 0.008 83;
     --border: 0.855 0.026 76; --input: 0.82 0.03 75; --ring: 0.55 0.19 36;
+    --success: 0.5 0.13 152; --warning: 0.52 0.15 75; --info: 0.48 0.12 235;
     --radius: 0.7rem;
+  }
+
+  /* Dark tokens — same hue family as light (warm neutral ~57/83, primary orange ~36,
+     destructive red ~28, accent ~71) so the palette isn't a naive invert. Respects OS
+     preference by default; an explicit [data-theme] always overrides it. */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: 0.175 0.012 57; --foreground: 0.94 0.012 83;
+      --card: 0.215 0.014 57; --card-foreground: 0.94 0.012 83;
+      --popover: 0.215 0.014 57; --popover-foreground: 0.94 0.012 83;
+      --primary: 0.62 0.185 36; --primary-foreground: 0.15 0.02 57;
+      --secondary: 0.28 0.02 57; --secondary-foreground: 0.92 0.014 80;
+      --muted: 0.255 0.016 57; --muted-foreground: 0.7 0.02 60;
+      --accent: 0.32 0.05 71; --accent-foreground: 0.93 0.02 70;
+      --destructive: 0.6 0.19 28; --destructive-foreground: 0.98 0.008 83;
+      --border: 0.32 0.02 57; --input: 0.34 0.022 57; --ring: 0.62 0.185 36;
+      --success: 0.78 0.15 152; --warning: 0.78 0.15 75; --info: 0.75 0.13 235;
+    }
+  }
+
+  :root[data-theme='dark'] {
+    --background: 0.175 0.012 57; --foreground: 0.94 0.012 83;
+    --card: 0.215 0.014 57; --card-foreground: 0.94 0.012 83;
+    --popover: 0.215 0.014 57; --popover-foreground: 0.94 0.012 83;
+    --primary: 0.62 0.185 36; --primary-foreground: 0.15 0.02 57;
+    --secondary: 0.28 0.02 57; --secondary-foreground: 0.92 0.014 80;
+    --muted: 0.255 0.016 57; --muted-foreground: 0.7 0.02 60;
+    --accent: 0.32 0.05 71; --accent-foreground: 0.93 0.02 70;
+    --destructive: 0.6 0.19 28; --destructive-foreground: 0.98 0.008 83;
+    --border: 0.32 0.02 57; --input: 0.34 0.022 57; --ring: 0.62 0.185 36;
+    --success: 0.78 0.15 152; --warning: 0.78 0.15 75; --info: 0.75 0.13 235;
+  }
+
+  :root[data-theme='light'] {
+    --background: 0.978 0.012 83; --foreground: 0.205 0.025 57;
+    --card: 0.995 0.006 83; --card-foreground: 0.205 0.025 57;
+    --popover: 0.995 0.006 83; --popover-foreground: 0.205 0.025 57;
+    --primary: 0.55 0.19 36; --primary-foreground: 0.985 0.008 83;
+    --secondary: 0.93 0.027 80; --secondary-foreground: 0.25 0.027 56;
+    --muted: 0.947 0.017 78; --muted-foreground: 0.49 0.025 57;
+    --accent: 0.91 0.043 71; --accent-foreground: 0.27 0.032 55;
+    --destructive: 0.53 0.19 28; --destructive-foreground: 0.985 0.008 83;
+    --border: 0.855 0.026 76; --input: 0.82 0.03 75; --ring: 0.55 0.19 36;
+    --success: 0.5 0.13 152; --warning: 0.52 0.15 75; --info: 0.48 0.12 235;
   }
 }
 

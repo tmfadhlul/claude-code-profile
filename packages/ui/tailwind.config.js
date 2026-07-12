@@ -16,6 +16,7 @@ export default {
         accent: { DEFAULT: 'oklch(var(--accent) / <alpha-value>)', foreground: 'oklch(var(--accent-foreground) / <alpha-value>)' },
         popover: { DEFAULT: 'oklch(var(--popover) / <alpha-value>)', foreground: 'oklch(var(--popover-foreground) / <alpha-value>)' },
         card: { DEFAULT: 'oklch(var(--card) / <alpha-value>)', foreground: 'oklch(var(--card-foreground) / <alpha-value>)' },
+        success: 'oklch(var(--success) / <alpha-value>)', warning: 'oklch(var(--warning) / <alpha-value>)', info: 'oklch(var(--info) / <alpha-value>)',
       },
       fontFamily: { sans: ['Manrope Variable', 'sans-serif'], display: ['Newsreader Variable', 'serif'] },
       borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)' },
