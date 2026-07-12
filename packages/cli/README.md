@@ -78,6 +78,7 @@ clp plugins add claude-mem@thedotmack --profile work    # single-instance plugin
 clp plugins add x@mkt --marketplace owner/repo --all    # first use of a new marketplace
 clp plugins rm ponytail@ponytail --profile z
 clp plugins sync --from oauth --to office               # copy one profile's plugin set
+clp plugins apply                                       # make live state match the manifest
 ```
 
 The dashboard's **Plugins** tab is the same matrix as switches. Notes: the matrix is declarative — a reconcile uninstalls a plugin from profiles where it isn't switched on; reconcile derives "installed" from each profile's `installed_plugins.json` (ground truth), so a stale `enabledPlugins` entry gets properly installed; `claude` must be on PATH; Codex has no plugin system.
@@ -221,7 +222,7 @@ clp pair 192.168.1.10 --port 51234 --pin 123456 --name mac
 clp sync --from mac --with-secrets
 ```
 
-Manifest, MCP servers, skills, commands, launcher functions, and (opt-in) secrets all arrive — rendered for the local OS: PowerShell profile functions and junctions on Windows, `.zshrc`/`.bashrc` functions and symlinks elsewhere.
+Manifest, MCP servers, skills, commands, launcher functions, plugin declarations, and (opt-in) secrets all arrive — rendered for the local OS: PowerShell profile functions and junctions on Windows, `.zshrc`/`.bashrc` functions and symlinks elsewhere. Plugins are then **installed to match** via `claude plugin` (needs `claude` on PATH; if that step can't run, `clp plugins apply --all` finishes the job).
 
 Two things intentionally don't travel:
 
@@ -265,7 +266,7 @@ Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN sh
 |---|---|
 | Profiles | `list` · `create <name> [--from p]` · `adopt [--yes]` · `doctor` (create/edit/delete + provider config: use `clp ui`) |
 | MCP | `mcp list` · `mcp add/rm <name> [--profile p\|--all]` · `mcp sync --from p --to p1,p2\|--all` |
-| Plugins | `plugins list` · `plugins add/rm <id> [--profile p\|--all] [--marketplace src]` · `plugins sync --from p --to p1,p2\|--all` |
+| Plugins | `plugins list` · `plugins add/rm <id> [--profile p\|--all] [--marketplace src]` · `plugins sync --from p --to p1,p2\|--all` · `plugins apply [--profile p\|--all]` |
 | Provider | `provider list` · `provider anthropic <profile> --login\|--api-key\|--auth-token [--secret name]` |
 | Secrets | `secrets set/get/list/rm` (set prompts without echo) · `secrets migrate` |
 | Manifest | `status` · `apply` · `snapshot` |

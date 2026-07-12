@@ -47,6 +47,14 @@ describe('plugins cli', () => {
     expect(calls).toContain('install ponytail@ponytail')
   })
 
+  it('apply reconciles all claude profiles against the manifest without changing it', async () => {
+    await writeFile(join(home, '.claude', 'settings.json'),
+      JSON.stringify({ enabledPlugins: { 'ponytail@ponytail': true } }))
+    await run('adopt', '--yes')
+    await run('plugins', 'apply')
+    expect(calls).toContain('install ponytail@ponytail')
+  })
+
   it('add errors for an unknown marketplace without --marketplace', async () => {
     await run('adopt', '--yes')
     await expect(run('plugins', 'add', 'x@nope', '--profile', 'default')).rejects.toThrow(/marketplace/)

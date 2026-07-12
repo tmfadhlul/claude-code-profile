@@ -7,6 +7,7 @@ import {
 import { join } from 'node:path'
 import type { CliContext } from '../context.js'
 import { secretsStore } from './secrets.js'
+import { reconcilePlugins } from './plugins.js'
 import { planActions, planActionsPreflight } from '../plan.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
@@ -95,6 +96,17 @@ export function registerSyncCommands(program: Command, ctx: CliContext): void {
       for (const line of res.performed) console.log(`${opts.dryRun ? '[dry-run] ' : ''}${line}`)
       if (opts.withSecrets) {
         console.log(`${opts.dryRun ? '[dry-run] ' : ''}secrets transferred: ${Object.keys(values).join(', ') || 'none'}`)
+      }
+      // The pulled manifest declares plugins, but apply never installs them — reconcile so the
+      // peer's plugin state actually matches. Best-effort: a missing `claude` binary or network
+      // failure shouldn't fail the sync that already landed.
+      if (!opts.dryRun) {
+        const claudeNames = m.profiles.filter(p => (p.agent ?? 'claude') === 'claude').map(p => p.name)
+        try {
+          for (const line of await reconcilePlugins(ctx, m, claudeNames)) console.log(line)
+        } catch (e) {
+          console.error(`warn: plugin reconcile failed (${(e as Error).message}) — run: clp plugins apply --all`)
+        }
       }
     })
 }

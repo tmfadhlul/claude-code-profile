@@ -7,6 +7,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { requireManifest, type CliContext } from '../context.js'
 import { planActions, planActionsPreflight } from '../plan.js'
+import { reconcilePlugins } from './plugins.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
@@ -45,5 +46,14 @@ export function registerBundleCommands(program: Command, ctx: CliContext): void 
       const actions = await planActions(ctx, m)
       const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!opts.dryRun })
       for (const line of res.performed) console.log(`${opts.dryRun ? '[dry-run] ' : ''}${line}`)
+      // The imported manifest declares plugins; apply never installs them — reconcile (best-effort).
+      if (!opts.dryRun) {
+        const claudeNames = m.profiles.filter(p => (p.agent ?? 'claude') === 'claude').map(p => p.name)
+        try {
+          for (const line of await reconcilePlugins(ctx, m, claudeNames)) console.log(line)
+        } catch (e) {
+          console.error(`warn: plugin reconcile failed (${(e as Error).message}) — run: clp plugins apply --all`)
+        }
+      }
     })
 }

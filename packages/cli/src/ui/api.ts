@@ -501,7 +501,15 @@ export function buildRoutes(ctx: CliContext): Route[] {
     }
     const actions = await planActions(ctx, m)
     const r = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!dryRun })
-    sendJson(res, 200, { performed: r.performed, secrets })
+    // Reconcile plugins so the pulled manifest's declarations are actually installed here.
+    // Best-effort: a missing `claude` binary must not fail a sync that already landed.
+    const performed = [...r.performed]
+    if (!dryRun) {
+      const claudeNames = m.profiles.filter(p => (p.agent ?? 'claude') === 'claude').map(p => p.name)
+      try { performed.push(...await reconcilePlugins(ctx, m, claudeNames)) }
+      catch (e) { performed.push(`warn: plugin reconcile failed (${(e as Error).message}) — run: clp plugins apply --all`) }
+    }
+    sendJson(res, 200, { performed, secrets })
   })
 
   return routes
