@@ -160,5 +160,24 @@ export async function saveManifest(root: string, m: Manifest): Promise<void> {
     await exec('git', ['-C', root, 'rev-parse', '--git-dir'])
     await exec('git', ['-C', root, 'add', '-A'])
     await exec('git', ['-C', root, 'commit', '-m', 'ccprofiles: update manifest'])
-  } catch { /* not a repo or nothing to commit — fine */ }
+  } catch (e) {
+    if (!isBenignGitError(e)) {
+      // manifest.yaml is already written above — don't throw, but don't silently drop history
+      // either. Anything other than "not a repo" / "nothing to commit" is a real failure
+      // (hook rejection, disk full, corrupt index, ...) the user should know about.
+      process.stderr.write(`warn: manifest.yaml written but git commit failed: ${gitErrorMessage(e)}\n`)
+    }
+    // else: not a git repo, or nothing changed to commit — expected, nothing to report
+  }
+}
+
+/** True for the two git outcomes saveManifest treats as expected/benign, not a real failure. */
+function isBenignGitError(e: unknown): boolean {
+  const text = gitErrorMessage(e)
+  return /nothing to commit/i.test(text) || /not a git repository/i.test(text)
+}
+
+function gitErrorMessage(e: unknown): string {
+  const err = e as { stderr?: string; stdout?: string; message?: string } | undefined
+  return [err?.stderr, err?.stdout, err?.message].filter(Boolean).join(' ').trim() || String(e)
 }

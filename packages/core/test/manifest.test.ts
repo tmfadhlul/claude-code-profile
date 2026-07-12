@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { describe, it, expect, vi } from 'vitest'
+import { mkdtemp, readFile, writeFile, chmod } from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -90,6 +90,39 @@ describe('manifest', () => {
       it('is false for yaml that only has secret:// refs', () => {
         expect(manifestHasPlaintextSecret('ANTHROPIC_AUTH_TOKEN: secret://z-token')).toBe(false)
       })
+    })
+  })
+
+  describe('saveManifest git-error handling', () => {
+    it('writes manifest.yaml without throwing when root is not a git repo at all', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'ccp-notrepo-'))
+      await expect(saveManifest(root, sample)).resolves.toBeUndefined()
+      expect(await readFile(join(root, 'manifest.yaml'), 'utf8')).toContain('hub: default')
+    })
+
+    it('warns on stderr but does not throw on a real git commit failure, and does not mislabel it "nothing to commit"', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'ccp-gitfail-'))
+      await exec('git', ['-C', root, 'init'])
+      await exec('git', ['-C', root, 'config', 'user.email', 'test@example.com'])
+      await exec('git', ['-C', root, 'config', 'user.name', 'Test'])
+      // a rejecting pre-commit hook fails `git commit` for a real reason — distinct from the
+      // benign "not a git repository" / "nothing to commit" cases saveManifest is meant to swallow
+      const hookPath = join(root, '.git', 'hooks', 'pre-commit')
+      await writeFile(hookPath, '#!/bin/sh\necho "blocked by test hook" >&2\nexit 1\n')
+      await chmod(hookPath, 0o755)
+
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      try {
+        await expect(saveManifest(root, sample)).resolves.toBeUndefined()
+        // manifest.yaml is still written even though the commit failed
+        expect(await readFile(join(root, 'manifest.yaml'), 'utf8')).toContain('hub: default')
+        const warnings = stderrSpy.mock.calls.map(c => String(c[0]))
+        expect(warnings.some(w => /git commit failed/i.test(w) && /blocked by test hook/i.test(w))).toBe(true)
+        // must not be swallowed under the benign "nothing to commit" umbrella
+        expect(warnings.some(w => /nothing to commit/i.test(w))).toBe(false)
+      } finally {
+        stderrSpy.mockRestore()
+      }
     })
   })
 
