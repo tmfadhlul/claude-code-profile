@@ -12,6 +12,7 @@ import { registerBundleCommands } from './commands/bundle.js'
 import { registerSessionCommands } from './commands/sessions.js'
 import { registerHandoffCommands } from './commands/handoff.js'
 import { registerPluginCommands } from './commands/plugins.js'
+import { registerProviderCommands } from './commands/provider.js'
 import { registerUiCommand } from './ui/command.js'
 
 // createRequire (not a JSON import assertion) so this works under NodeNext ESM without
@@ -73,6 +74,7 @@ export function buildProgram(ctx: CliContext): Command {
   registerProfileCommands(program, ctx)
   registerSessionCommands(program, ctx)
   registerPluginCommands(program, ctx)
+  registerProviderCommands(program, ctx)
   registerHandoffCommands(program, ctx)
   registerMcpCommands(program, ctx)
   registerSecretsCommands(program, ctx)
