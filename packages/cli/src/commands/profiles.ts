@@ -73,6 +73,12 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
       const dir = pr.dir.replace('{home}', ctx.home)
       if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run: ccprofiles apply`)
     }
+    if (existsSync(join(ctx.manifestRoot, '.git'))) {
+      try {
+        const remotes = execFileSync('git', ['-C', ctx.manifestRoot, 'remote'], { encoding: 'utf8' }).trim()
+        if (remotes) problems.push(`${ctx.manifestRoot} has a git remote configured (${remotes.split('\n').join(', ')}) — manifest/secrets history could be pushed off this machine; run: git -C ${ctx.manifestRoot} remote remove <name>`)
+      } catch { /* git optional */ }
+    }
     if (problems.length === 0) { console.log('ok: no problems found'); return }
     for (const p of problems) console.log(`warn: ${p}`)
     process.exitCode = 1

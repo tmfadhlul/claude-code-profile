@@ -44,6 +44,13 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     const res = await callApi(ctx, 'GET', '/api/doctor')
     expect(Array.isArray(res._json.problems)).toBe(true)
   })
+  it('doctor warns when the manifest root git repo has a remote configured', async () => {
+    await callApi(ctx, 'POST', '/api/adopt')
+    const { execFileSync } = await import('node:child_process')
+    execFileSync('git', ['-C', ctx.manifestRoot, 'remote', 'add', 'origin', 'https://example.com/x.git'])
+    const res = await callApi(ctx, 'GET', '/api/doctor')
+    expect(res._json.problems.some((p: string) => /git remote configured/.test(p))).toBe(true)
+  })
   it('profiles include env, links, and mcpNames from the manifest', async () => {
     await callApi(ctx, 'POST', '/api/adopt')
     await callApi(ctx, 'PATCH', '/api/profiles/default', { env: { FOO: 'bar' } })

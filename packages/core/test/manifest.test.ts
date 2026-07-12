@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, readFile } from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { parseManifest, serializeManifest, loadManifest, saveManifest, assertSafeManifest, ManifestError } from '../src/manifest.js'
+
+const exec = promisify(execFile)
 
 const sample = {
   version: 1 as const,
@@ -38,6 +42,46 @@ describe('manifest', () => {
     await saveManifest(root, sample)
     const mode = statSync(join(root, 'manifest.yaml')).mode & 0o777
     expect(mode).toBe(0o600)
+  })
+
+  describe('plaintext-secret git gate', () => {
+    async function initGitRepo(root: string) {
+      await exec('git', ['-C', root, 'init'])
+      await exec('git', ['-C', root, 'config', 'user.email', 'test@example.com'])
+      await exec('git', ['-C', root, 'config', 'user.name', 'Test'])
+    }
+    async function commitCount(root: string): Promise<number> {
+      try {
+        const { stdout } = await exec('git', ['-C', root, 'log', '--oneline'])
+        return stdout.trim() === '' ? 0 : stdout.trim().split('\n').length
+      } catch { return 0 }
+    }
+
+    it('writes manifest.yaml but skips the commit when a plaintext token is present', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'ccp-secretgate-'))
+      await initGitRepo(root)
+      const withToken = {
+        ...sample,
+        profiles: [{ ...sample.profiles[0], settingsEnv: { ANTHROPIC_AUTH_TOKEN: 'sk-ant-abcdefgh12345678' } }],
+      }
+      await saveManifest(root, withToken as any)
+      // file still written
+      const text = await readFile(join(root, 'manifest.yaml'), 'utf8')
+      expect(text).toContain('sk-ant-abcdefgh12345678')
+      // but no commit was created
+      expect(await commitCount(root)).toBe(0)
+    })
+
+    it('commits normally when the manifest only has secret:// refs', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'ccp-secretgate-ok-'))
+      await initGitRepo(root)
+      const withRef = {
+        ...sample,
+        profiles: [{ ...sample.profiles[0], settingsEnv: { ANTHROPIC_AUTH_TOKEN: 'secret://z-token' } }],
+      }
+      await saveManifest(root, withRef as any)
+      expect(await commitCount(root)).toBe(1)
+    })
   })
 
   describe('injection safety (untrusted manifests)', () => {

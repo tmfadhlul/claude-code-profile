@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildProgram, makeContext } from '../src/context.js'
@@ -50,5 +51,23 @@ describe('e2e: adopt → migrate → mcp sync → apply → doctor', () => {
 
     const doctorOut = await run('doctor')
     expect(doctorOut).toContain('ok')
+  })
+})
+
+describe('doctor: warns on a configured git remote in ~/.ccprofiles', () => {
+  it('flags a remote once one is added', async () => {
+    const remoteHome = await mkdtemp(join(tmpdir(), 'ccp-e2e-remote-'))
+    await mkdir(join(remoteHome, '.claude'))
+    await writeFile(join(remoteHome, '.claude.json'), JSON.stringify({
+      mcpServers: {}, oauthAccount: { emailAddress: 'me@personal.com' },
+    }))
+    const lines: string[] = []
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a) => { lines.push(a.join(' ')) })
+    const ctx = makeContext({ CCPROFILES_TEST_HOME: remoteHome, CCPROFILES_PASSPHRASE: 'pw', SHELL: '/bin/zsh' } as any)
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'adopt', '--yes'])
+    execFileSync('git', ['-C', ctx.manifestRoot, 'remote', 'add', 'origin', 'https://example.com/x.git'])
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'doctor'])
+    spy.mockRestore()
+    expect(lines.join('\n')).toMatch(/git remote configured/)
   })
 })
