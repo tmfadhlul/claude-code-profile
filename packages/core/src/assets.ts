@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import type { Manifest } from './manifest.js'
 import { renderPath, type Platform } from './platform.js'
-import { atomicWrite } from './fsutil.js'
+import { atomicWrite, backupFiles } from './fsutil.js'
 import { physicalLinkEntry } from './links.js'
 
 const HUB_DIRS = ['skills', 'commands', 'plugins']
@@ -60,8 +60,22 @@ export async function collectAssets(m: Manifest, p: Platform): Promise<Record<st
   return assets
 }
 
-/** Write an asset map back to the live layout. */
-export async function writeAssets(assets: Record<string, string>, m: Manifest, p: Platform): Promise<void> {
+export interface WriteAssetsBackup {
+  backupRoot: string
+  stamp: string
+}
+
+/**
+ * Write an asset map back to the live layout. Callers with an existing hub — i.e. `sync
+ * --from`/`bundle import` overwriting local skills/commands/guidance — should pass `backup`
+ * so any pre-existing target is preserved under `<backupRoot>/<stamp>/` before it's clobbered.
+ */
+export async function writeAssets(
+  assets: Record<string, string>,
+  m: Manifest,
+  p: Platform,
+  backup?: WriteAssetsBackup,
+): Promise<void> {
   const hub = m.profiles.find(x => x.name === m.hub)
   for (const [rel, content] of Object.entries(assets)) {
     const parts = safeParts(rel)
@@ -70,7 +84,9 @@ export async function writeAssets(assets: Record<string, string>, m: Manifest, p
       if (!HUB_DIRS.includes(logicalEntry) || rest.length === 0) throw new Error(`unsafe asset path: ${JSON.stringify(rel)}`)
       const root = join(renderPath(hub.dir, p), physicalLinkEntry(hub.agent ?? 'claude', logicalEntry))
       await assertNoSymlinkParents(root, rest)
-      await atomicWrite(join(root, ...rest), content)
+      const target = join(root, ...rest)
+      if (backup && existsSync(target)) await backupFiles([target], backup.backupRoot, backup.stamp)
+      await atomicWrite(target, content)
     } else if (parts[0] === 'profiles') {
       const [, name, ...rest] = parts
       const pr = m.profiles.find(x => x.name === name)
@@ -79,7 +95,9 @@ export async function writeAssets(assets: Record<string, string>, m: Manifest, p
       if (rest.length !== 1 || rest[0] !== guidanceName) throw new Error(`unsafe profile asset path: ${JSON.stringify(rel)}`)
       const root = renderPath(pr.dir, p)
       await assertNoSymlinkParents(root, rest)
-      await atomicWrite(join(root, guidanceName), content)
+      const target = join(root, guidanceName)
+      if (backup && existsSync(target)) await backupFiles([target], backup.backupRoot, backup.stamp)
+      await atomicWrite(target, content)
     } else throw new Error(`unsafe asset path: ${JSON.stringify(rel)}`)
   }
 }
