@@ -88,6 +88,37 @@ describe('cross-device sync', () => {
     expect(await runOn(winHome, 'secrets', 'get', 'z-token')).toBe('sk-secret-value')
   })
 
+  it('sync installs the pulled manifest plugins on this device', async () => {
+    // declare a plugin on the master AFTER the first sync (so earlier pulls were plugin-free)
+    const manifestPath = join(macHome, '.ccprofiles', 'manifest.yaml')
+    const m = parseManifest(await readFile(manifestPath, 'utf8'))
+    m.marketplaces['ponytail'] = { source: 'DietrichGebert/ponytail' }
+    m.profiles.find(p => p.name === 'default')!.plugins.push('ponytail@ponytail')
+    await writeFile(manifestPath, serializeManifest(m))
+
+    // pull on the second machine with a fake runner — the sync itself must trigger the install
+    const calls: string[] = []
+    const ctx = {
+      ...makeContext({ CCPROFILES_TEST_HOME: winHome, CCPROFILES_PASSPHRASE: 'pw', SHELL: '/bin/zsh' } as any),
+      pluginRunner: {
+        marketplaceAdd: async (_d: string, src: string) => { calls.push(`add ${src}`) },
+        install: async (_d: string, id: string) => { calls.push(`install ${id}`) },
+        uninstall: async (_d: string, id: string) => { calls.push(`uninstall ${id}`) },
+      },
+    }
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'sync', '--from', 'mac'])
+    spy.mockRestore()
+    expect(calls).toContain('add DietrichGebert/ponytail')
+    expect(calls).toContain('install ponytail@ponytail')
+
+    // restore the master manifest so later tests (bundle export/import) stay plugin-free
+    const m2 = parseManifest(await readFile(manifestPath, 'utf8'))
+    delete m2.marketplaces['ponytail']
+    for (const pr of m2.profiles) pr.plugins = pr.plugins.filter(x => x !== 'ponytail@ponytail')
+    await writeFile(manifestPath, serializeManifest(m2))
+  })
+
   it('bundle export/import replicates offline', async () => {
     const bundleFile = join(macHome, 'setup.ccb')
     await runOn(macHome, 'export', bundleFile)

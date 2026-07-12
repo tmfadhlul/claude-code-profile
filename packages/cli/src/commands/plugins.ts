@@ -76,6 +76,17 @@ export function registerPluginCommands(program: Command, ctx: CliContext): void 
     for (const id of ids) console.log(id.padEnd(28) + claude.map(p => (p.plugins.includes(id) ? 'x' : '.').padEnd(10)).join(''))
   })
 
+  plugins.command('apply')
+    .description('install/uninstall so live plugin state matches the manifest (no manifest changes)')
+    .option('--profile <p>').option('--all')
+    .action(async (opts: any) => {
+      const m = await requireManifest(ctx)
+      const names = opts.profile || opts.all ? targets(m, opts)
+        : m.profiles.filter(p => (p.agent ?? 'claude') === 'claude').map(p => p.name) // default: all claude profiles
+      await reconcile(m, names)
+      console.log(`plugins: reconciled ${names.length} profile(s)`)
+    })
+
   plugins.command('add <id>')
     .option('--profile <p>').option('--all').option('--marketplace <source>')
     .action(async (id: string, opts: any) => {
