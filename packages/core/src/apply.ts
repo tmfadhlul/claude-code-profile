@@ -68,7 +68,17 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
     const dir = renderPath(pr.dir, p)
     const lp = live.find(l => l.dir === dir) ?? null
     const desired: Record<string, McpServerDef> = {}
-    for (const name of pr.mcp) desired[name] = m.mcpServers[name]
+    for (const name of pr.mcp) {
+      const def = m.mcpServers[name]
+      // codex has no per-server transport-type field (writeCodexMcpServers strips it on write);
+      // keep desired in the same shape as `current` here or the drift check never converges.
+      if (agent === 'codex') {
+        const { type: _claudeTransportType, ...codexDef } = def
+        desired[name] = codexDef
+      } else {
+        desired[name] = def
+      }
+    }
 
     if (!lp) actions.push({ kind: 'create-profile-dir', dir })
 

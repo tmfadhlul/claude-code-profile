@@ -22,5 +22,10 @@ export function renderPath(template: string, p: Platform): string {
 export function toTemplate(absPath: string, p: Platform): string {
   const norm = absPath.replaceAll('\\', '/')
   const home = p.home.replaceAll('\\', '/')
-  return norm.startsWith(home) ? '{home}' + norm.slice(home.length) : norm
+  // require a path-separator boundary — a raw startsWith would also match sibling dirs
+  // that merely share a string prefix with home (e.g. home "/Users/tm" matching
+  // "/Users/tmfadhlul-old/...")
+  if (norm === home) return '{home}'
+  if (norm.startsWith(home + '/')) return '{home}' + norm.slice(home.length)
+  return norm
 }

@@ -74,4 +74,13 @@ describe('restoreLegacyPluginSymlink', () => {
     const pdir = join(home, '.claude-b', 'plugins'); await mkdir(pdir, { recursive: true })
     expect(await restoreLegacyPluginSymlink(pdir)).toBe(false)
   })
+  it('does not wipe the symlink into an empty dir when the pool target is missing', async () => {
+    const pool = join(home, 'pool-gone') // never created — simulates a missing/removed pool target
+    const pdir = join(home, '.claude-c', 'plugins')
+    await mkdir(join(home, '.claude-c'), { recursive: true })
+    await symlink(pool, pdir, 'dir')
+    await expect(restoreLegacyPluginSymlink(pdir)).rejects.toThrow()
+    // the symlink must still be intact — never replaced with an empty real dir
+    expect((await lstat(pdir)).isSymbolicLink()).toBe(true)
+  })
 })

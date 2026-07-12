@@ -112,6 +112,24 @@ describe('planApply + executeApply', () => {
     const live = await discoverProfiles(home)
     expect(() => planApply(m, live, p)).toThrow(/unsafe link topology/)
   })
+
+  it('converges for a codex profile with a shared type:"http" MCP server (no perpetual drift)', async () => {
+    const dir = join(home, '.codex-http')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'config.toml'), '')
+    const m: Manifest = {
+      version: 1, hub: null, marketplaces: {},
+      mcpServers: { remote: { type: 'http', url: 'https://example.com/mcp' } },
+      profiles: [{ agent: 'codex', name: 'codex-http', dir: '{home}/.codex-http', launcher: 'cx-http', auth: 'oauth',
+        env: {}, settingsEnv: {}, links: {}, mcp: ['remote'], skipPermissions: false, sharedSessions: false, plugins: [] }],
+    }
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const actions1 = planApply(m, await discoverProfiles(home), p)
+    expect(actions1.some(a => a.kind === 'set-mcp-servers')).toBe(true)
+    await executeApply(actions1, { backupRoot: join(home, 'bk'), stamp: 't1' })
+    const actions2 = planApply(m, await discoverProfiles(home), p)
+    expect(actions2.filter(a => a.kind === 'set-mcp-servers')).toEqual([])
+  })
 })
 
 describe('settingsEnv apply', () => {
