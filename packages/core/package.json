@@ -5,8 +5,15 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "license": "MIT",
   "funding": {
@@ -34,5 +41,8 @@
     "smol-toml": "^1.7.0",
     "yaml": "^2.5.0",
     "zod": "^3.23.0"
+  },
+  "scripts": {
+    "prepack": "cd ../.. && npm run build"
   }
 }
