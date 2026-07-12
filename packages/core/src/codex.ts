@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { parse, stringify } from 'smol-toml'
 import type { McpServerDef } from './manifest.js'
-import { atomicWrite } from './fsutil.js'
+import { atomicWrite, backupFiles } from './fsutil.js'
 
 type TomlTable = Record<string, unknown>
 
@@ -31,9 +31,20 @@ export async function readCodexMcpServers(configPath: string): Promise<Record<st
     .filter(([, def]) => !isProjectScopedMcpServer(def)))
 }
 
-export async function writeCodexMcpServers(configPath: string, servers: Record<string, McpServerDef>): Promise<void> {
+export async function writeCodexMcpServers(
+  configPath: string,
+  servers: Record<string, McpServerDef>,
+  backup?: { backupRoot: string; stamp: string },
+): Promise<void> {
   let config: TomlTable = {}
-  try { config = parse(await readFile(configPath, 'utf8')) as TomlTable } catch { /* new config */ }
+  try { config = parse(await readFile(configPath, 'utf8')) as TomlTable }
+  catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+      if (backup) await backupFiles([configPath], backup.backupRoot, backup.stamp)
+      throw new Error(`refusing to overwrite unreadable ${configPath} — back it up and fix it, then re-apply (${(e as Error).message})`)
+    }
+    // ENOENT: genuinely new config, config stays {}
+  }
   // Preserve project-scoped launchers already in the file: clp hides them from management,
   // so a plain replace would silently delete them. Only user-scope servers are clp-managed.
   const existing = config.mcp_servers && typeof config.mcp_servers === 'object' && !Array.isArray(config.mcp_servers)

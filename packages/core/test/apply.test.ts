@@ -184,6 +184,80 @@ describe('settingsEnv apply', () => {
   })
 })
 
+describe('never replaces a config whose existing content is unreadable', () => {
+  it('set-mcp-servers (claude) aborts instead of clobbering corrupt .claude.json', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-corrupt-mcp-'))
+    await mkdir(join(home, '.claude'), { recursive: true })
+    const corrupt = '{ "oauthAccount": { "email": "user@example.com"' // truncated JSON
+    await writeFile(join(home, '.claude.json'), corrupt)
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const m = manifest()
+    m.profiles = [m.profiles[0]] // only the '.claude' hub profile
+    // discoverProfiles skips profiles whose config fails to parse, so this profile
+    // looks "absent" to planApply — exactly the state that used to trigger the wipe.
+    const live = await discoverProfiles(home)
+    expect(live).toEqual([])
+    const actions = planApply(m, live, p)
+    expect(actions.some(a => a.kind === 'set-mcp-servers')).toBe(true)
+    await expect(executeApply(actions, { backupRoot: join(home, 'bk'), stamp: 't1' }))
+      .rejects.toThrow(/refusing to overwrite unreadable/)
+    expect(await readFile(join(home, '.claude.json'), 'utf8')).toBe(corrupt)
+    expect(existsSync(join(home, 'bk', 't1'))).toBe(true)
+  })
+
+  it('set-settings-env aborts instead of clobbering corrupt settings.json', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-corrupt-senv-'))
+    const dir = join(home, '.claude-z')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, '.claude.json'), '{}')
+    const corrupt = '{ "model": "opus", "env": { "OLD": "1"' // truncated JSON
+    await writeFile(join(dir, 'settings.json'), corrupt)
+    const p = detectPlatform({ home, shell: '/bin/zsh' })
+    const m: Manifest = {
+      version: 1, hub: null, mcpServers: {}, marketplaces: {},
+      profiles: [{ name: 'z', dir: '{home}/.claude-z', launcher: 'cl-z', auth: 'env', env: {}, links: {}, mcp: [],
+        settingsEnv: { ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' }, skipPermissions: false, sharedSessions: false, plugins: [] }],
+    }
+    const live = await discoverProfiles(home)
+    const resolved = await resolveSettingsEnv(m, async () => null)
+    const actions = planApply(m, live, p, resolved)
+    expect(actions.some(a => a.kind === 'set-settings-env')).toBe(true)
+    await expect(executeApply(actions, { backupRoot: join(home, 'bk'), stamp: 't1' }))
+      .rejects.toThrow(/refusing to overwrite unreadable/)
+    expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe(corrupt)
+    expect(existsSync(join(home, 'bk', 't1'))).toBe(true)
+  })
+
+  it('set-mcp-servers (codex) aborts instead of clobbering corrupt config.toml', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-corrupt-codex-'))
+    const dir = join(home, '.codex-work')
+    await mkdir(dir, { recursive: true })
+    const corrupt = 'model = "gpt-5.4"\n[mcp_servers.broken\n' // invalid TOML (unterminated table header)
+    await writeFile(join(dir, 'config.toml'), corrupt)
+    const m: Manifest = {
+      version: 1, hub: null, mcpServers: { context7: { command: 'npx', args: ['-y', '@upstash/context7-mcp'] } }, marketplaces: {},
+      profiles: [{ agent: 'codex', name: 'codex-work', dir: '{home}/.codex-work', launcher: 'cx-work', auth: 'oauth', env: {}, links: {}, mcp: ['context7'], settingsEnv: {}, skipPermissions: false, sharedSessions: false, plugins: [] }],
+    }
+    const p = detectPlatform({ osKind: 'darwin', home, shell: '/bin/zsh' })
+    const actions = planApply(m, [], p)
+    await expect(executeApply(actions, { backupRoot: join(home, 'bk'), stamp: 't1' }))
+      .rejects.toThrow(/refusing to overwrite unreadable/)
+    expect(await readFile(join(dir, 'config.toml'), 'utf8')).toBe(corrupt)
+    expect(existsSync(join(home, 'bk', 't1'))).toBe(true)
+  })
+
+  it('still treats a genuinely missing config as new (no throw, mcpServers written)', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-missing-mcp-'))
+    const p = detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' })
+    const m = manifest()
+    m.profiles = [m.profiles[0]]
+    const actions = planApply(m, [], p)
+    await executeApply(actions, { backupRoot: join(home, 'bk'), stamp: 't1' })
+    const cfg = JSON.parse(await readFile(join(home, '.claude.json'), 'utf8'))
+    expect(Object.keys(cfg.mcpServers)).toEqual(['playwright'])
+  })
+})
+
 describe('shared sessions', () => {
   function sharedManifest(on: boolean): Manifest {
     return {
