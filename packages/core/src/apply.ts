@@ -1,9 +1,9 @@
 import { cp, lstat, mkdir, readFile, rm, symlink, unlink } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
-import { join, dirname, isAbsolute, relative } from 'node:path'
+import { join, dirname, posix as posixPath, win32 as win32Path } from 'node:path'
 import type { Manifest, McpServerDef } from './manifest.js'
 import type { LiveProfile } from './discovery.js'
-import { renderPath, type Platform } from './platform.js'
+import { renderPath, type Platform, type OsKind } from './platform.js'
 import { renderRcBlock, upsertManagedBlock } from './rcblock.js'
 import { atomicWrite, backupFiles, backupTree } from './fsutil.js'
 import { writeCodexMcpServers } from './codex.js'
@@ -33,9 +33,13 @@ const SECRET_PREFIX = 'secret://'
 export const CLAUDE_SHARED_ENTRIES = ['projects', 'todos', 'shell-snapshots'] as const
 export const CODEX_SHARED_ENTRIES = ['sessions'] as const
 
-function isWithin(parent: string, child: string): boolean {
-  const rel = relative(parent, child)
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && !isAbsolute(rel))
+// exported for direct unit testing of the win32-vs-posix separator handling below
+export function isWithin(parent: string, child: string, osKind: OsKind): boolean {
+  // use the *target* platform's path implementation (osKind), not the host's — planApply is
+  // routinely called with an osKind that differs from process.platform (cross-platform plan/test)
+  const pathImpl = osKind === 'win32' ? win32Path : posixPath
+  const rel = pathImpl.relative(parent, child)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${pathImpl.sep}`) && !pathImpl.isAbsolute(rel))
 }
 
 /** Resolve secret:// refs in every profile's settingsEnv. Throws on a missing secret. */
@@ -94,7 +98,7 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
         : renderPath(target, p)
       const from = join(dir, physicalEntry)
       if (from === to) continue
-      if (isWithin(from, to) || isWithin(to, from))
+      if (isWithin(from, to, p.os) || isWithin(to, from, p.os))
         throw new Error(`unsafe link topology: ${from} -> ${to} (source and target must not contain each other)`)
       if (lp?.links[entry] === to) continue
       actions.push({ kind: 'link', from, to })

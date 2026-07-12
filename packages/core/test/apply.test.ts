@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile, readlink, readdir, lstat } from 'n
 import { existsSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { planApply, executeApply, resolveSettingsEnv } from '../src/apply.js'
+import { planApply, executeApply, resolveSettingsEnv, isWithin } from '../src/apply.js'
 import { discoverProfiles } from '../src/discovery.js'
 import { detectPlatform } from '../src/platform.js'
 import type { Manifest } from '../src/manifest.js'
@@ -28,6 +28,24 @@ function manifest(): Manifest {
     marketplaces: {},
   }
 }
+
+describe('isWithin', () => {
+  it('uses the passed osKind, not the host process.platform, for win32 path handling', () => {
+    // these win32-style (backslash) paths would be mishandled by node's default `relative()`
+    // on a non-Windows host (it treats '\\' as a plain character, not a separator) — passing
+    // osKind: 'win32' must route through path.win32 regardless of the host OS running the test
+    expect(isWithin('C:\\Users\\foo', 'C:\\Users\\foo\\bar', 'win32')).toBe(true)
+    // sibling dir that merely shares a string prefix must NOT be considered "within"
+    expect(isWithin('C:\\Users\\foo', 'C:\\Users\\foobar', 'win32')).toBe(false)
+    expect(isWithin('C:\\Users\\foo', 'C:\\Users\\foo', 'win32')).toBe(true)
+  })
+
+  it('still handles posix-style paths for non-win32 osKind', () => {
+    expect(isWithin('/home/foo', '/home/foo/bar', 'darwin')).toBe(true)
+    expect(isWithin('/home/foo', '/home/foobar', 'darwin')).toBe(false)
+    expect(isWithin('/home/foo', '/home/foo', 'linux')).toBe(true)
+  })
+})
 
 describe('planApply + executeApply', () => {
   it('plans mcp update, new profile dir, hub link, rc block', async () => {
