@@ -92,6 +92,37 @@ describe('buildManifest', () => {
     expect(actions.some(a => a.kind === 'unshare-session-dir')).toBe(false)
   })
 
+  it('detects a pooled session-dir symlink under a custom sharedRoot (CCPROFILES_HOME) only when that root is passed', () => {
+    const customSharedRoot = '/custom/pool'
+    const liveWithCustomPool: LiveProfile[] = [
+      { agent: 'claude', dirName: '.claude', dir: '/Users/x/.claude', configPath: '/Users/x/.claude.json',
+        account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {}, marketplaces: {}, mcpServers: {} },
+      { agent: 'claude', dirName: '.claude-work', dir: '/Users/x/.claude-work', configPath: '/Users/x/.claude-work/.claude.json',
+        account: 'a@b.c',
+        links: {
+          projects: join(customSharedRoot, 'projects'),
+          todos: join(customSharedRoot, 'todos'),
+          'shell-snapshots': join(customSharedRoot, 'shell-snapshots'),
+        },
+        settingsEnv: {}, enabledPlugins: {}, marketplaces: {}, mcpServers: {} },
+    ]
+
+    // with the real pool root threaded through, detection matches
+    const pooled = buildManifest(liveWithCustomPool, p, customSharedRoot)
+    const work = pooled.profiles.find(x => x.name === 'work')!
+    expect(work.sharedSessions).toBe(true)
+    expect(work.links.projects).toBeUndefined()
+    expect(work.links.todos).toBeUndefined()
+    expect(work.links['shell-snapshots']).toBeUndefined()
+
+    // proof the param is load-bearing: with the default sharedRoot, the custom-root
+    // symlinks look like plain links instead, and sharing is not detected
+    const notPooled = buildManifest(liveWithCustomPool, p)
+    const workNotPooled = notPooled.profiles.find(x => x.name === 'work')!
+    expect(workNotPooled.sharedSessions).toBe(false)
+    expect(workNotPooled.links.projects).toBe(join(customSharedRoot, 'projects'))
+  })
+
   it('drops plugin ids whose marketplace has no known_marketplaces entry (orphan filter)', () => {
     const liveWithPlugins: LiveProfile[] = [
       { agent: 'claude', dirName: '.claude', dir: '/Users/x/.claude', configPath: '/Users/x/.claude.json',

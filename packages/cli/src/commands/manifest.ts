@@ -31,7 +31,7 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
     })
 
   program.command('snapshot').description('overwrite manifest from live state').action(async () => {
-    const m = buildManifest(await discoverProfiles(ctx.home), ctx.platform)
+    const m = buildManifest(await discoverProfiles(ctx.home), ctx.platform, join(ctx.manifestRoot, 'shared'))
     if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
       const oldM = await loadManifest(ctx.manifestRoot)
       let store: Awaited<ReturnType<typeof secretsStore>> | null = null
