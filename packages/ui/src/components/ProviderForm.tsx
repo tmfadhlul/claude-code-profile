@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import {
@@ -57,10 +57,16 @@ export function ProviderForm({ form, onChange, secretNames, copySources, profile
   secretNames: string[]; copySources: CopySource[]; profileName: string
 }) {
   const [sel, setSel] = useState(() => detectPreset(form.baseUrl))
-  const authMode = providerAuthMode(form)
-  const setAuthMode = (mode: ProviderAuthMode) => {
-    if (mode === 'login') { onChange({ ...form, token: { ...form.token, value: '' } }); return }
-    onChange({ ...form, tokenVar: mode === 'api-key' ? 'ANTHROPIC_API_KEY' : 'ANTHROPIC_AUTH_TOKEN' })
+  // Track the chosen auth mode as explicit UI intent, not a pure derivation of the form:
+  // a token mode with no token yet is indistinguishable from login otherwise, so the
+  // selector could never leave "login". Seeded from the incoming form on mount.
+  const [authMode, setAuthMode] = useState<ProviderAuthMode>(() => providerAuthMode(form))
+  // Re-seed when the edited profile changes (form identity is stable per open editor).
+  useEffect(() => { setAuthMode(providerAuthMode(form)) }, [profileName]) // eslint-disable-line react-hooks/exhaustive-deps
+  const chooseAuthMode = (mode: ProviderAuthMode) => {
+    setAuthMode(mode)
+    if (mode === 'login') onChange({ ...form, token: { ...form.token, value: '' } })
+    else onChange({ ...form, tokenVar: mode === 'api-key' ? 'ANTHROPIC_API_KEY' : 'ANTHROPIC_AUTH_TOKEN' })
   }
   const launcher = profileName === 'default' ? 'claude' : `cl-${profileName}`
 
@@ -71,7 +77,7 @@ export function ProviderForm({ form, onChange, secretNames, copySources, profile
       return
     }
     setSel(v)
-    if (v === 'anthropic') onChange(emptyProviderForm())
+    if (v === 'anthropic') { setAuthMode('login'); onChange(emptyProviderForm()) }
     else {
       const preset = PROVIDER_PRESETS.find(p => p.id === v)
       if (preset) onChange(applyPreset(form, preset))
@@ -94,7 +100,7 @@ export function ProviderForm({ form, onChange, secretNames, copySources, profile
             <label className="field-label">Authentication</label>
             <div className="grid grid-cols-3 gap-1 rounded-lg border bg-card p-1" role="radiogroup" aria-label="Anthropic authentication mode">
               {AUTH_MODES.map(({ id, label }) => (
-                <button key={id} type="button" role="radio" aria-checked={authMode === id} onClick={() => setAuthMode(id)}
+                <button key={id} type="button" role="radio" aria-checked={authMode === id} onClick={() => chooseAuthMode(id)}
                   className={cn(
                     'rounded-md px-2 py-2 text-xs font-bold transition-colors',
                     authMode === id ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
