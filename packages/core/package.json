@@ -1,6 +1,6 @@
 {
   "name": "ccprofiles-core",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Core library for ccprofiles — discovery, manifest, secrets, apply, and LAN sync for Claude Code multi-account setups",
   "type": "module",
   "main": "./dist/index.js",
