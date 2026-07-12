@@ -71,6 +71,18 @@ export function mergeProviderEnv(form: ProviderForm, advanced: Record<string, st
   return out
 }
 
+export type ProviderAuthMode = 'login' | 'api-key' | 'auth-token'
+
+/**
+ * Anthropic-default auth mode for a labeled form — mirrors core's `anthropicAuthMode`
+ * (login when neither token var is set) using the form's own emptiness signal: no
+ * base URL and no token value means nothing will be written on merge, i.e. login.
+ */
+export function providerAuthMode(form: ProviderForm): ProviderAuthMode {
+  if (!form.baseUrl.trim() && !form.token.value.trim()) return 'login'
+  return form.tokenVar === 'ANTHROPIC_API_KEY' ? 'api-key' : 'auth-token'
+}
+
 export function detectPreset(baseUrl: string): string {
   if (!baseUrl) return 'anthropic'
   return PROVIDER_PRESETS.find(p => p.baseUrl === baseUrl)?.id ?? 'custom'
