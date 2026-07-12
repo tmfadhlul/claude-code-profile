@@ -2,6 +2,7 @@ import { Command } from 'commander'
 import { detectPlatform, loadManifest, type Manifest, type OsKind, type Platform } from 'ccprofiles-core'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import { registerProfileCommands } from './commands/profiles.js'
 import { registerMcpCommands } from './commands/mcp.js'
 import { registerSecretsCommands } from './commands/secrets.js'
@@ -13,6 +14,11 @@ import { registerHandoffCommands } from './commands/handoff.js'
 import { registerPluginCommands } from './commands/plugins.js'
 import { registerUiCommand } from './ui/command.js'
 
+// createRequire (not a JSON import assertion) so this works under NodeNext ESM without
+// resolveJsonModule, and resolves the same way from src/ (ts-node/vitest) and dist/ (built) —
+// dist/../package.json is packages/cli/package.json, which npm always ships regardless of "files".
+const { version: cliVersion } = createRequire(import.meta.url)('../package.json') as { version: string }
+
 export interface CliContext {
   home: string
   platform: Platform
@@ -23,6 +29,8 @@ export interface CliContext {
   env: NodeJS.ProcessEnv
   /** Test seam: injects a fake PluginRunner instead of shelling out to `claude plugin ...`. */
   pluginRunner?: import('ccprofiles-core').PluginRunner
+  /** Test seam: injects a fake masked-input reader for `secrets set <name>` (no TTY in tests). */
+  promptSecret?: (label: string) => Promise<string>
 }
 
 export function makeContext(env: NodeJS.ProcessEnv = process.env): CliContext {
@@ -60,6 +68,7 @@ export async function requireManifest(ctx: CliContext): Promise<Manifest> {
 
 export function buildProgram(ctx: CliContext): Command {
   const program = new Command('ccprofiles').description('Manage multiple Claude Code and Codex accounts/profiles (alias: clp)')
+  program.version(cliVersion)
   program.exitOverride() // throw instead of process.exit — required for tests
   registerProfileCommands(program, ctx)
   registerSessionCommands(program, ctx)
