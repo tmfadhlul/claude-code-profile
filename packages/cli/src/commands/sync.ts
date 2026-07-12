@@ -88,7 +88,7 @@ export function registerSyncCommands(program: Command, ctx: CliContext): void {
       if (!opts.dryRun) {
         await backupFiles([join(ctx.manifestRoot, 'manifest.yaml')], ctx.backupRoot, stamp())
         await saveManifest(ctx.manifestRoot, m)
-        await writeAssets(assets, m, ctx.platform)
+        await writeAssets(assets, m, ctx.platform, { backupRoot: ctx.backupRoot, stamp: stamp() })
       }
       const actions = await planActions(ctx, m)
       const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!opts.dryRun })

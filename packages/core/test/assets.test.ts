@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { collectAssets, writeAssets } from '../src/assets.js'
@@ -35,6 +35,47 @@ describe('cross-agent shared assets', () => {
     await writeAssets(assets, codexHub(), targetPlatform)
     expect(await readFile(join(targetHome, '.codex', 'prompts', 'ship.md'), 'utf8')).toBe('# ship')
     expect(await readFile(join(targetHome, '.codex', 'skills', 'review', 'SKILL.md'), 'utf8')).toBe('# review')
+  })
+
+  it('backs up an existing hub asset before overwriting it, when given a backupRoot', async () => {
+    await mkdir(join(home, '.codex', 'skills', 'demo'), { recursive: true })
+    await writeFile(join(home, '.codex', 'skills', 'demo', 'SKILL.md'), '# old content')
+    const platform = detectPlatform({ home, shell: '/bin/zsh' })
+    const backupRoot = join(home, 'backups')
+    const stampValue = '2026-07-12T00-00-00-000Z'
+
+    await writeAssets(
+      { 'hub/skills/demo/SKILL.md': '# new content' },
+      codexHub(),
+      platform,
+      { backupRoot, stamp: stampValue },
+    )
+
+    // new content is live
+    expect(await readFile(join(home, '.codex', 'skills', 'demo', 'SKILL.md'), 'utf8')).toBe('# new content')
+
+    // old content survives under backups/<stamp>/...
+    const stampDir = join(backupRoot, stampValue)
+    const backedUpFiles = await readdir(stampDir)
+    expect(backedUpFiles.length).toBeGreaterThan(0)
+    const contents = await Promise.all(backedUpFiles.map(f => readFile(join(stampDir, f), 'utf8')))
+    expect(contents).toContain('# old content')
+  })
+
+  it('does not back up when the target is a new file (happy path unaffected)', async () => {
+    const platform = detectPlatform({ home, shell: '/bin/zsh' })
+    const backupRoot = join(home, 'backups')
+    const stampValue = '2026-07-12T00-00-00-000Z'
+
+    await writeAssets(
+      { 'hub/skills/fresh/SKILL.md': '# brand new' },
+      codexHub(),
+      platform,
+      { backupRoot, stamp: stampValue },
+    )
+
+    expect(await readFile(join(home, '.codex', 'skills', 'fresh', 'SKILL.md'), 'utf8')).toBe('# brand new')
+    await expect(readdir(join(backupRoot, stampValue))).rejects.toThrow()
   })
 
   it.each(['hub/skills/../../outside', 'hub\\skills\\outside', 'profiles/codex/../AGENTS.md', 'unknown/file'])(
