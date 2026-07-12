@@ -232,6 +232,12 @@ export function buildRoutes(ctx: CliContext): Route[] {
       const dir = pr.dir.replace('{home}', ctx.home)
       if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run apply`)
     }
+    if (existsSync(join(ctx.manifestRoot, '.git'))) {
+      try {
+        const remotes = execFileSync('git', ['-C', ctx.manifestRoot, 'remote'], { encoding: 'utf8' }).trim()
+        if (remotes) problems.push(`${ctx.manifestRoot} has a git remote configured (${remotes.split('\n').join(', ')}) — manifest/secrets history could be pushed off this machine; run: git -C ${ctx.manifestRoot} remote remove <name>`)
+      } catch { /* git optional */ }
+    }
     sendJson(res, 200, { problems })
   })
 

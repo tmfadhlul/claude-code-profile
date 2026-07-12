@@ -59,6 +59,8 @@ const SAFE_LINK_ENTRY = /^[A-Za-z0-9._-]+$/     // one profile-dir child; never 
 const SAFE_SOURCE = /^[A-Za-z0-9._@:/][A-Za-z0-9._/@:-]*$/ // marketplace source (interpolated into `claude plugin` shell-out); no leading '-'
 const SHELL_META = /["`$;|&()\n\r<>]/         // chars that could break out of a quoted shell context
 const SECRET_PREFIX = 'secret://'
+// plaintext provider tokens that must never be committed to manifest git history
+const PLAINTEXT_TOKEN = /sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}/
 
 /** Reject any path with a literal `..` path-traversal segment, on either `/` or `\` separators. */
 function hasDotDotSegment(path: string): boolean {
@@ -139,6 +141,12 @@ export async function saveManifest(root: string, m: Manifest): Promise<void> {
   await mkdir(root, { recursive: true, mode: 0o700 })
   // settingsEnv can carry plaintext secrets until `secrets migrate` runs — write at 0600.
   await atomicWrite(join(root, 'manifest.yaml'), yaml, { mode: 0o600 })
+  if (PLAINTEXT_TOKEN.test(yaml)) {
+    // never let a plaintext token land in git history — the file is still written above
+    // (callers may still need it on disk), we just refuse to commit it.
+    process.stderr.write('warn: manifest contains a plaintext secret — skipping git commit; run: ccprofiles secrets migrate\n')
+    return
+  }
   try {
     await exec('git', ['-C', root, 'rev-parse', '--git-dir'])
     await exec('git', ['-C', root, 'add', '-A'])
