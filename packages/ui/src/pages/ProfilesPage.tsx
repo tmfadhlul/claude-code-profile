@@ -55,7 +55,7 @@ export function ProfilesPage() {
       {filtered.length === 0 ? <EmptyState icon={Search} title="No matching profiles" description="Try another name, account, provider, or agent." /> : <div className="surface-flat overflow-hidden divide-y">{filtered.map(r => <article key={r.name} className="group relative p-5 transition-colors hover:bg-muted/30 sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center">
           <button className="flex min-w-0 flex-1 items-start gap-4 text-left" disabled={!r.adopted} onClick={() => setEditing(r)}>
-            <span className={cn('grid h-12 w-12 shrink-0 place-items-center rounded-xl border', r.agent === 'codex' ? 'bg-sky-700/5 text-sky-800' : 'bg-primary/5 text-primary')}>{r.agent === 'codex' ? <Code2 className="h-5 w-5" /> : <Bot className="h-5 w-5" />}</span>
+            <span className={cn('grid h-12 w-12 shrink-0 place-items-center rounded-xl border', r.agent === 'codex' ? 'bg-info/5 text-info' : 'bg-primary/5 text-primary')}>{r.agent === 'codex' ? <Code2 className="h-5 w-5" /> : <Bot className="h-5 w-5" />}</span>
             <span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><strong className="text-base">{r.name}</strong><StatusPill tone={r.adopted ? 'good' : 'warn'}>{r.adopted ? 'Managed' : 'Discovered'}</StatusPill>{r.sharedSessions && <StatusPill tone="info">Shared sessions</StatusPill>}{r.skipPermissions && <StatusPill tone="bad">Skip prompts</StatusPill>}</span><span className="mt-2 block truncate text-sm text-muted-foreground">{r.account ?? 'No account label'} · {r.auth}</span></span>
           </button>
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t pt-4 sm:grid-cols-4 xl:w-[540px] xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">

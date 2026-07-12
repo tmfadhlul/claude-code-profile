@@ -45,11 +45,11 @@ export function EmptyState({ icon: Icon = Inbox, title, description, action }: {
 
 export function StatusPill({ tone = 'neutral', children, className }: { tone?: 'good' | 'warn' | 'bad' | 'neutral' | 'info'; children: ReactNode; className?: string }) {
   const tones = {
-    good: 'border-emerald-700/20 bg-emerald-700/10 text-emerald-800',
-    warn: 'border-amber-700/20 bg-amber-600/10 text-amber-800',
+    good: 'border-success/20 bg-success/10 text-success',
+    warn: 'border-warning/20 bg-warning/10 text-warning',
     bad: 'border-destructive/20 bg-destructive/10 text-destructive',
     neutral: 'border-border bg-muted text-muted-foreground',
-    info: 'border-sky-700/20 bg-sky-700/10 text-sky-800',
+    info: 'border-info/20 bg-info/10 text-info',
   }
   return <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wider', tones[tone], className)}>{children}</span>
 }
@@ -89,5 +89,5 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
 }
 
 export function CheckLine({ children }: { children: ReactNode }) {
-  return <div className="flex items-start gap-2 text-sm text-muted-foreground"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" /><span>{children}</span></div>
+  return <div className="flex items-start gap-2 text-sm text-muted-foreground"><Check className="mt-0.5 h-4 w-4 shrink-0 text-success" /><span>{children}</span></div>
 }

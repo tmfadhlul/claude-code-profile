@@ -67,7 +67,7 @@ export function StatusPage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
         <section className="surface overflow-hidden">
           <div className="flex items-start gap-4 p-6 sm:p-8">
-            <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-full ${state.inSync ? 'bg-emerald-700/10 text-emerald-800' : 'bg-amber-600/10 text-amber-800'}`}>
+            <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-full ${state.inSync ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
               {state.inSync ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
             </div>
             <div className="min-w-0 flex-1">
