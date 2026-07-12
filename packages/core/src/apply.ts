@@ -139,11 +139,18 @@ export async function executeApply(
     } else if (a.kind === 'set-mcp-servers') {
       if (a.agent === 'codex') {
         await mkdir(dirname(a.configPath), { recursive: true })
-        await writeCodexMcpServers(a.configPath, a.servers)
+        await writeCodexMcpServers(a.configPath, a.servers, { backupRoot: opts.backupRoot, stamp: opts.stamp })
         continue
       }
       let cfg: Record<string, unknown> = {}
-      try { cfg = JSON.parse(await readFile(a.configPath, 'utf8')) } catch { /* new file */ }
+      try { cfg = JSON.parse(await readFile(a.configPath, 'utf8')) }
+      catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+          await backupFiles([a.configPath], opts.backupRoot, opts.stamp)
+          throw new Error(`refusing to overwrite unreadable ${a.configPath} — back it up and fix it, then re-apply (${(e as Error).message})`)
+        }
+        // ENOENT: genuinely new file, cfg stays {}
+      }
       cfg.mcpServers = a.servers
       await mkdir(dirname(a.configPath), { recursive: true })
       await atomicWrite(a.configPath, JSON.stringify(cfg, null, 2))
@@ -173,7 +180,14 @@ export async function executeApply(
       await atomicWrite(a.rcFile, upsertManagedBlock(rc, a.block))
     } else if (a.kind === 'set-settings-env') {
       let cfg: Record<string, unknown> = {}
-      try { cfg = JSON.parse(await readFile(a.settingsPath, 'utf8')) } catch { /* new file */ }
+      try { cfg = JSON.parse(await readFile(a.settingsPath, 'utf8')) }
+      catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+          await backupFiles([a.settingsPath], opts.backupRoot, opts.stamp)
+          throw new Error(`refusing to overwrite unreadable ${a.settingsPath} — back it up and fix it, then re-apply (${(e as Error).message})`)
+        }
+        // ENOENT: genuinely new file, cfg stays {}
+      }
       cfg.env = a.env
       await mkdir(dirname(a.settingsPath), { recursive: true })
       // Resolved secret:// refs land here as plaintext env values — keep it 0600.
