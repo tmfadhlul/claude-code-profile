@@ -125,7 +125,9 @@ export async function loadManifest(root: string): Promise<Manifest> {
 export async function saveManifest(root: string, m: Manifest): Promise<void> {
   const yaml = serializeManifest(m)
   parseManifest(yaml) // guard: never write a manifest that cannot be reloaded
-  await mkdir(root, { recursive: true })
+  // manifestRoot also holds secrets.enc/devices.json — lock it down here since this is often
+  // the first thing (adopt/manifest init) to create it.
+  await mkdir(root, { recursive: true, mode: 0o700 })
   await writeFile(join(root, 'manifest.yaml'), yaml, 'utf8')
   try {
     await exec('git', ['-C', root, 'rev-parse', '--git-dir'])

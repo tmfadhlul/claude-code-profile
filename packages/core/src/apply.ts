@@ -176,7 +176,8 @@ export async function executeApply(
       try { cfg = JSON.parse(await readFile(a.settingsPath, 'utf8')) } catch { /* new file */ }
       cfg.env = a.env
       await mkdir(dirname(a.settingsPath), { recursive: true })
-      await atomicWrite(a.settingsPath, JSON.stringify(cfg, null, 2))
+      // Resolved secret:// refs land here as plaintext env values — keep it 0600.
+      await atomicWrite(a.settingsPath, JSON.stringify(cfg, null, 2), { mode: 0o600 })
     } else if (a.kind === 'share-session-dir') {
       await mkdir(a.to, { recursive: true })
       let st: Awaited<ReturnType<typeof lstat>> | null = null

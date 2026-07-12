@@ -40,12 +40,12 @@ export class FileBackend implements SecretsBackend {
     const c = createCipheriv('aes-256-gcm', this.key(f.salt), iv)
     const data = Buffer.concat([c.update(value, 'utf8'), c.final()])
     f.entries[key] = { iv: iv.toString('base64'), tag: c.getAuthTag().toString('base64'), data: data.toString('base64') }
-    await atomicWrite(this.filePath, JSON.stringify(f))
+    await atomicWrite(this.filePath, JSON.stringify(f), { mode: 0o600 })
   }
   async delete(key: string): Promise<void> {
     const f = await this.load()
     delete f.entries[key]
-    await atomicWrite(this.filePath, JSON.stringify(f))
+    await atomicWrite(this.filePath, JSON.stringify(f), { mode: 0o600 })
   }
 }
 
@@ -149,12 +149,12 @@ export class DpapiBackend implements SecretsBackend {
   async set(key: string, value: string): Promise<void> {
     const f = await this.load()
     f.entries[key] = await this.crypt.protect(value)
-    await atomicWrite(this.filePath, JSON.stringify(f))
+    await atomicWrite(this.filePath, JSON.stringify(f), { mode: 0o600 })
   }
   async delete(key: string): Promise<void> {
     const f = await this.load()
     delete f.entries[key]
-    await atomicWrite(this.filePath, JSON.stringify(f))
+    await atomicWrite(this.filePath, JSON.stringify(f), { mode: 0o600 })
   }
 }
 
@@ -165,7 +165,7 @@ export class SecretsStore {
     return JSON.parse(await readFile(this.indexPath, 'utf8'))
   }
   private async writeIndex(names: string[]): Promise<void> {
-    await atomicWrite(this.indexPath, JSON.stringify([...new Set(names)].sort()))
+    await atomicWrite(this.indexPath, JSON.stringify([...new Set(names)].sort()), { mode: 0o600 })
   }
   get backendName(): string { return this.backend.name }
   async get(key: string): Promise<string | null> { return this.backend.get(key) }
