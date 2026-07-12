@@ -28,7 +28,10 @@ function sortKeys(o: Record<string, unknown>): Record<string, unknown> {
 }
 
 const SECRET_PREFIX = 'secret://'
-const CLAUDE_SHARED_ENTRIES = ['projects', 'todos', 'shell-snapshots'] as const
+// exported so adopt.ts (buildManifest) can recognize pooled session-dir symlinks with the
+// exact same entry list planApply uses to decide share/unshare — keeps both sides in lockstep.
+export const CLAUDE_SHARED_ENTRIES = ['projects', 'todos', 'shell-snapshots'] as const
+export const CODEX_SHARED_ENTRIES = ['sessions'] as const
 
 function isWithin(parent: string, child: string): boolean {
   const rel = relative(parent, child)
@@ -87,7 +90,7 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
       actions.push({ kind: 'link', from, to })
     }
 
-    const sharedEntries: readonly string[] = agent === 'codex' ? ['sessions'] : CLAUDE_SHARED_ENTRIES
+    const sharedEntries: readonly string[] = agent === 'codex' ? CODEX_SHARED_ENTRIES : CLAUDE_SHARED_ENTRIES
     for (const entry of sharedEntries) {
       const from = join(dir, entry)
       const to = join(sharedRoot, entry)
