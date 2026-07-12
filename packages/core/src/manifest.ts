@@ -62,6 +62,15 @@ const SECRET_PREFIX = 'secret://'
 // plaintext provider tokens that must never be committed to manifest git history
 const PLAINTEXT_TOKEN = /sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}/
 
+/**
+ * True if `yaml` (raw manifest.yaml text, or any string) contains a plaintext provider
+ * token. saveManifest() uses this to decide whether to skip the git commit; doctor checks
+ * (CLI + UI) use it to surface that skip as a visible problem instead of a stderr-only warning.
+ */
+export function manifestHasPlaintextSecret(yaml: string): boolean {
+  return PLAINTEXT_TOKEN.test(yaml)
+}
+
 /** Reject any path with a literal `..` path-traversal segment, on either `/` or `\` separators. */
 function hasDotDotSegment(path: string): boolean {
   return path.split(/[/\\]/).includes('..')
@@ -141,7 +150,7 @@ export async function saveManifest(root: string, m: Manifest): Promise<void> {
   await mkdir(root, { recursive: true, mode: 0o700 })
   // settingsEnv can carry plaintext secrets until `secrets migrate` runs — write at 0600.
   await atomicWrite(join(root, 'manifest.yaml'), yaml, { mode: 0o600 })
-  if (PLAINTEXT_TOKEN.test(yaml)) {
+  if (manifestHasPlaintextSecret(yaml)) {
     // never let a plaintext token land in git history — the file is still written above
     // (callers may still need it on disk), we just refuse to commit it.
     process.stderr.write('warn: manifest contains a plaintext secret — skipping git commit; run: ccprofiles secrets migrate\n')
