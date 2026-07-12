@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, readlink, readdir, lstat } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { planApply, executeApply, resolveSettingsEnv } from '../src/apply.js'
@@ -150,6 +150,21 @@ describe('settingsEnv apply', () => {
     // idempotent: re-plan sees no drift
     const again = planApply(m, await discoverProfiles(home), p, resolved)
     expect(again.filter(a => a.kind === 'set-settings-env')).toEqual([])
+  })
+  it('set-settings-env writes settings.json at 0600 (may contain resolved secrets)', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-apply-senv-mode-'))
+    const p = platformFor(home)
+    const dir = join(home, '.claude-z')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, '.claude.json'), '{}')
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ model: 'opus' }))
+    const m = manifestWith({ ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' })
+    const live = await discoverProfiles(home)
+    const resolved = await resolveSettingsEnv(m, async () => null)
+    const actions = planApply(m, live, p, resolved)
+    await executeApply(actions, { backupRoot: join(home, 'bk'), stamp: 's1' })
+    const mode = statSync(join(dir, 'settings.json')).mode & 0o777
+    expect(mode).toBe(0o600)
   })
   it('empty settingsEnv never touches settings.json', async () => {
     const home = await mkdtemp(join(tmpdir(), 'ccp-apply-senv2-'))

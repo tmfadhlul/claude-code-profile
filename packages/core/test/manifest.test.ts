@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mkdtemp } from 'node:fs/promises'
+import { statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseManifest, serializeManifest, loadManifest, saveManifest, ManifestError } from '../src/manifest.js'
@@ -30,6 +31,13 @@ describe('manifest', () => {
     const root = await mkdtemp(join(tmpdir(), 'ccp-'))
     await saveManifest(root, sample)
     expect(await loadManifest(root)).toEqual(sample)
+  })
+
+  it('saveManifest writes manifest.yaml at 0600 (settingsEnv may hold plaintext secrets)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ccp-mode-'))
+    await saveManifest(root, sample)
+    const mode = statSync(join(root, 'manifest.yaml')).mode & 0o777
+    expect(mode).toBe(0o600)
   })
 
   describe('injection safety (untrusted manifests)', () => {
