@@ -10,6 +10,9 @@ The `clp` command (also available as `ccprofiles`) fixes that:
 - 🎛️ **Set up profiles the easy way** — a guided web form to create, edit, and delete profiles: launcher, env, links, MCP, and provider — no hand-editing config files
 - 🌐 **Custom LLM providers per profile** — point a profile at z.ai (GLM), mimo, OpenRouter, or any Anthropic-compatible endpoint with a preset picker; base URL + token + model mappings managed for you, token kept in the keychain
 - 🧩 **Manage MCP servers** across profiles: drift matrix, add/remove everywhere at once, sync one profile's set to others
+- 🔌 **Manage plugins the same way** — a plugin × profile matrix driving the official `claude plugin` installer, so e.g. `claude-mem` runs on exactly one profile while `superpowers` runs everywhere
+- 🔁 **Hand off a session across agents** — `cl-work handoff codex-work` opens the other agent seeded with the current project's latest session transcript
+- 🔑 **Pick how Anthropic authenticates per profile** — CLI login, API key, or auth token, from the CLI or the dashboard, token kept in the keychain
 - 🔐 **Secrets out of your rc files** — macOS Keychain / libsecret / encrypted file, with `clp secrets migrate` to clean up existing plaintext keys
 - 🖥️ **Replicate to another machine over LAN** — PIN pairing, end-to-end encrypted, no cloud, works macOS ↔ Windows ↔ Linux ↔ WSL
 - 🖼️ **Web dashboard** — `clp ui` opens a local browser panel to manage everything visually
@@ -64,6 +67,21 @@ The matrix and every `add`/`rm`/`sync` span **both agents** — sync a Claude pr
 > - **Claude** — servers added with `claude mcp add` at its default scope live under `projects[...]` or a project `.mcp.json`; clp never reads them. If one should be managed, re-add it at user scope (`claude mcp add <name> --scope user -- <command>`) then `clp adopt --yes`.
 > - **Codex** — it has no project scope, so per-project launchers (identified by a `--project-dir` arg, e.g. code-context-engine's `cce serve --project-dir <path>`) sit in the *same* global table as your real user servers. clp hides these from `clp mcp list` and the drift matrix, and **preserves them on `apply`** — they're never surfaced, synced to other profiles, or deleted.
 
+### Manage plugins (Claude Code)
+
+Plugins work exactly like the MCP matrix — declare per profile, and clp reconciles by driving the official `claude plugin` installer (`marketplace add` + `install`/`uninstall`) with that profile's `CLAUDE_CONFIG_DIR`. No file copying or symlinking.
+
+```bash
+clp plugins list                                        # plugin × profile matrix
+clp plugins add superpowers@claude-plugins-official --all
+clp plugins add claude-mem@thedotmack --profile work    # single-instance plugins on ONE profile
+clp plugins add x@mkt --marketplace owner/repo --all    # first use of a new marketplace
+clp plugins rm ponytail@ponytail --profile z
+clp plugins sync --from oauth --to office               # copy one profile's plugin set
+```
+
+The dashboard's **Plugins** tab is the same matrix as switches. Notes: the matrix is declarative — a reconcile uninstalls a plugin from profiles where it isn't switched on; reconcile derives "installed" from each profile's `installed_plugins.json` (ground truth), so a stale `enabledPlugins` entry gets properly installed; `claude` must be on PATH; Codex has no plugin system.
+
 ### New profile for a new account
 
 ```bash
@@ -105,6 +123,17 @@ cx-other resume --last           # most recent Codex session in current director
 
 Use `clp sessions unshare <profile>` to restore a local snapshot while leaving shared pool intact. Dashboard exposes same toggle in profile editor and lists both Claude and Codex sessions with full resume IDs.
 
+### Hand off a session to the other agent
+
+Continue the current project's work on a different profile — even across agents (Claude ↔ Codex). The launcher intercepts `handoff`:
+
+```bash
+cl-oauth handoff codex-work      # from a Claude session's project dir
+cx-work handoff oauth            # and the reverse
+```
+
+It finds your latest session for the current directory, renders the transcript to `~/.ccprofiles/handoffs/<stamp>.md`, and opens the target agent seeded with a prompt pointing at it — a fresh, fully native session on the other side (no fragile session-file translation). Config-only caveats: the target is an explicit profile name, and existing launchers need one `clp apply` to gain the `handoff` verb.
+
 ### Using the launchers on Windows (PowerShell)
 
 On Windows the launchers are **PowerShell functions**, written to the PowerShell 7 profile:
@@ -127,6 +156,20 @@ and `clp` manages it for you. The easiest path is the **web dashboard**: open a 
 → **Edit → Provider**, pick a preset (or *Custom*), fill in the base URL, choose a
 keychain secret for the auth token, and optionally map the opus/sonnet/haiku model
 names. You can also **copy provider settings from another profile** in one click.
+
+**Staying on the plain Anthropic endpoint?** Choose *how* each profile authenticates —
+**CLI login**, **API key**, or **auth token** — from the same Provider editor (a 3-way
+Authentication selector) or the CLI:
+
+```bash
+clp provider list                              # each profile's current auth mode
+clp provider anthropic work --api-key          # masked prompt → keychain → settings.json
+clp provider anthropic work --auth-token --secret my-token   # reference an existing secret
+clp provider anthropic work --login            # clear tokens; sign in with `claude login`
+```
+
+The token is prompted without echo (never in argv/shell history), stored in the OS
+keychain, and referenced as `secret://…` — resolved only at apply time.
 
 Already configured a provider by hand in `settings.json`? `clp adopt` imports it, and
 `clp secrets migrate` moves the plaintext token into your keychain (the manifest then
@@ -195,7 +238,8 @@ A local panel to manage everything the CLI does — and the easiest way to set p
 
 - **Profiles** — create, edit, and delete profiles from a form: launcher function, environment variables, links, MCP toggles, a **guided Provider section** (preset picker for z.ai / mimo / OpenRouter / Anthropic-default / Custom, labeled base-URL / token / model fields, copy-from-another-profile, and an *Advanced* raw editor for any other `settings.json` env var), and a **Skip permissions** toggle that adds `--dangerously-skip-permissions` to that profile's launcher (⚠ bypasses every confirmation — launcher profiles only). Deleting a profile is manifest-only — the `~/.claude-*` directory stays on disk.
 - **Shell RC** — preview the managed block in your `.zshrc`/`.bashrc` vs. what the manifest renders, with a one-click update.
-- **Sessions** (Claude + Codex shared-history viewer), **MCP servers** (interactive drift matrix), **Secrets** (add / reveal / delete / migrate, plus attach a secret to a profile as an env var), **Sync**, and **Doctor**.
+- **Sessions** (Claude + Codex shared-history viewer with an in-dashboard transcript reader), **MCP servers** and **Plugins** (interactive matrices), **Secrets** (add / reveal / delete / migrate, plus attach a secret to a profile as an env var), **Sync** (with a dry-run preview before pulling), and **Doctor**.
+- **Dark mode** — follows your OS theme, with a persisted toggle in the sidebar. Destructive actions (sync-to-all, skip-permissions, secret detach/delete) ask for confirmation.
 
 It's **localhost-only** and guarded by a per-launch session token plus an Origin check, so nothing off your machine (and no website in your browser) can reach the API. Pass `--no-open` to just print the URL, or `--port <n>` to pin the port.
 
@@ -221,9 +265,12 @@ Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN sh
 |---|---|
 | Profiles | `list` · `create <name> [--from p]` · `adopt [--yes]` · `doctor` (create/edit/delete + provider config: use `clp ui`) |
 | MCP | `mcp list` · `mcp add/rm <name> [--profile p\|--all]` · `mcp sync --from p --to p1,p2\|--all` |
-| Secrets | `secrets set/get/list/rm` · `secrets migrate` |
+| Plugins | `plugins list` · `plugins add/rm <id> [--profile p\|--all] [--marketplace src]` · `plugins sync --from p --to p1,p2\|--all` |
+| Provider | `provider list` · `provider anthropic <profile> --login\|--api-key\|--auth-token [--secret name]` |
+| Secrets | `secrets set/get/list/rm` (set prompts without echo) · `secrets migrate` |
 | Manifest | `status` · `apply` · `snapshot` |
 | Sessions | `sessions share <profile>` · `sessions unshare <profile>` · `sessions list` |
+| Handoff | `handoff --from p --to p [--print]` (usually via the launcher: `cl-work handoff codex-work`) |
 | Sync | `serve [--allow-secrets]` · `pair <host> --port n --pin p` · `devices` · `sync --from dev [--with-secrets]` |
 | Bundle | `export <file>` · `import <file>` |
 | Dashboard | `ui [--port n] [--no-open]` |
