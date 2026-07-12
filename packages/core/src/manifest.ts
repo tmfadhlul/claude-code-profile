@@ -1,9 +1,10 @@
 import { z } from 'zod'
 import YAML from 'yaml'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { atomicWrite } from './fsutil.js'
 const exec = promisify(execFile)
 
 export class ManifestError extends Error {}
@@ -128,7 +129,8 @@ export async function saveManifest(root: string, m: Manifest): Promise<void> {
   // manifestRoot also holds secrets.enc/devices.json — lock it down here since this is often
   // the first thing (adopt/manifest init) to create it.
   await mkdir(root, { recursive: true, mode: 0o700 })
-  await writeFile(join(root, 'manifest.yaml'), yaml, 'utf8')
+  // settingsEnv can carry plaintext secrets until `secrets migrate` runs — write at 0600.
+  await atomicWrite(join(root, 'manifest.yaml'), yaml, { mode: 0o600 })
   try {
     await exec('git', ['-C', root, 'rev-parse', '--git-dir'])
     await exec('git', ['-C', root, 'add', '-A'])

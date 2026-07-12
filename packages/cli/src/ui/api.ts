@@ -4,7 +4,7 @@ import {
   writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
   atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, liveProfileName, scanSessions, readSessionTranscript, type Manifest,
 } from 'ccprofiles-core'
-import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync, mkdirSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { requireManifest, type CliContext } from '../context.js'
@@ -60,6 +60,10 @@ export function buildRoutes(ctx: CliContext): Route[] {
       let store: Awaited<ReturnType<typeof secretsStore>> | null = null
       await preserveSecretRefs(manifest, oldM, async name => { store ??= await secretsStore(ctx); return store.get(name) })
     }
+    // git init pre-creates manifestRoot at 0755 if it doesn't exist yet, and a later
+    // mkdir(root,{mode:0700}) is a no-op on an existing dir — so lock it down first.
+    if (!existsSync(ctx.manifestRoot)) mkdirSync(ctx.manifestRoot, { recursive: true, mode: 0o700 })
+    else if (process.platform !== 'win32') chmodSync(ctx.manifestRoot, 0o700)
     if (!existsSync(join(ctx.manifestRoot, '.git'))) {
       try { execFileSync('git', ['init', ctx.manifestRoot], { stdio: 'ignore' }) } catch { /* git optional */ }
     }
