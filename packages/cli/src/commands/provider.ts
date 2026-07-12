@@ -31,12 +31,15 @@ export function registerProviderCommands(program: Command, ctx: CliContext): voi
       const pr = m.profiles.find(p => p.name === name)
       if (!pr) throw new Error(`unknown profile: ${name}`)
       if ((pr.agent ?? 'claude') !== 'claude') throw new Error(`Anthropic auth applies to Claude profiles only; "${name}" is a codex profile`)
+      // Mirror setAnthropicAuthMode's base-URL guard here, before any prompt/store, so a
+      // rejected call never leaks a secret into the vault.
+      if (pr.settingsEnv.ANTHROPIC_BASE_URL?.trim()) throw new Error(`profile "${name}" uses a custom provider base URL — manage its token in the Provider editor, not as an Anthropic auth mode`)
 
       let tokenRef: string | undefined
       if (mode !== 'login') {
         const secretName = opts.secret ?? `anthropic-${mode}-${name}`
         if (!opts.secret) {
-          const value = await (ctx.promptSecret ?? readSecretMasked)(`Anthropic ${mode === 'api-key' ? 'API key' : 'auth token'} for ${name}`)
+          const value = await (ctx.promptSecret ?? readSecretMasked)(`Anthropic ${mode === 'api-key' ? 'API key' : 'auth token'} for ${name}:`)
           if (!value.trim()) throw new Error('no value entered')
           const store = await secretsStore(ctx)
           await store.set(secretName, value.trim())
