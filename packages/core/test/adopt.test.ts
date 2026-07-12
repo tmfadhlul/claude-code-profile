@@ -6,6 +6,7 @@ import { buildManifest, preserveSecretRefs } from '../src/adopt.js'
 import { detectPlatform } from '../src/platform.js'
 import { discoverProfiles, type LiveProfile } from '../src/discovery.js'
 import { parseManifest, serializeManifest, type Manifest } from '../src/manifest.js'
+import { planApply } from '../src/apply.js'
 
 const p = detectPlatform({ osKind: 'darwin', home: '/Users/x', shell: '/bin/zsh' })
 const live: LiveProfile[] = [
@@ -40,6 +41,55 @@ describe('buildManifest', () => {
     await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://api.z.ai/api/anthropic' } }))
     const m = buildManifest(await discoverProfiles(home), detectPlatform({ home, shell: '/bin/zsh' }))
     expect(m.profiles[0].settingsEnv.ANTHROPIC_BASE_URL).toBe('https://api.z.ai/api/anthropic')
+  })
+
+  it('recognizes a pooled session-dir symlink as sharedSessions instead of a plain link (claude)', () => {
+    const sharedRoot = join(p.home, '.ccprofiles', 'shared')
+    const liveWithPool: LiveProfile[] = [
+      { agent: 'claude', dirName: '.claude', dir: '/Users/x/.claude', configPath: '/Users/x/.claude.json',
+        account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {}, marketplaces: {}, mcpServers: {} },
+      { agent: 'claude', dirName: '.claude-work', dir: '/Users/x/.claude-work', configPath: '/Users/x/.claude-work/.claude.json',
+        account: 'a@b.c',
+        links: {
+          skills: '/Users/x/.claude/skills',
+          projects: join(sharedRoot, 'projects'),
+          todos: join(sharedRoot, 'todos'),
+          'shell-snapshots': join(sharedRoot, 'shell-snapshots'),
+        },
+        settingsEnv: {}, enabledPlugins: {}, marketplaces: {}, mcpServers: {} },
+    ]
+    const pooled = buildManifest(liveWithPool, p)
+    const work = pooled.profiles.find(x => x.name === 'work')!
+    expect(work.sharedSessions).toBe(true)
+    expect(work.links.projects).toBeUndefined()
+    expect(work.links.todos).toBeUndefined()
+    expect(work.links['shell-snapshots']).toBeUndefined()
+    // non-pool links are untouched, still routed through the hub
+    expect(work.links.skills).toBe('hub')
+
+    // regression guard: re-planning against the exact same live state must not try to
+    // "unshare" (copy the whole shared pool back into the profile dir) — that was the bug.
+    const actions = planApply(pooled, liveWithPool, p)
+    expect(actions.some(a => a.kind === 'unshare-session-dir')).toBe(false)
+  })
+
+  it('recognizes a pooled session-dir symlink as sharedSessions instead of a plain link (codex)', () => {
+    const sharedRoot = join(p.home, '.ccprofiles', 'shared')
+    const liveWithPool: LiveProfile[] = [
+      { agent: 'codex', dirName: '.codex', dir: '/Users/x/.codex', configPath: '/Users/x/.codex/config.toml',
+        account: null, links: {}, settingsEnv: {}, enabledPlugins: {}, marketplaces: {}, mcpServers: {} },
+      { agent: 'codex', dirName: '.codex-work', dir: '/Users/x/.codex-work', configPath: '/Users/x/.codex-work/config.toml',
+        account: null,
+        links: { sessions: join(sharedRoot, 'sessions') },
+        settingsEnv: {}, enabledPlugins: {}, marketplaces: {}, mcpServers: {} },
+    ]
+    const pooled = buildManifest(liveWithPool, p)
+    const work = pooled.profiles.find(x => x.name === 'codex-work')!
+    expect(work.sharedSessions).toBe(true)
+    expect(work.links.sessions).toBeUndefined()
+
+    const actions = planApply(pooled, liveWithPool, p)
+    expect(actions.some(a => a.kind === 'unshare-session-dir')).toBe(false)
   })
 
   it('drops plugin ids whose marketplace has no known_marketplaces entry (orphan filter)', () => {

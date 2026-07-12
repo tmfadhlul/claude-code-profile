@@ -1,8 +1,16 @@
+import { join } from 'node:path'
 import { liveProfileName, type LiveProfile } from './discovery.js'
 import type { Manifest, ProfileDecl } from './manifest.js'
 import { toTemplate, type Platform } from './platform.js'
+import { CLAUDE_SHARED_ENTRIES, CODEX_SHARED_ENTRIES } from './apply.js'
 
 export function buildManifest(live: LiveProfile[], platform: Platform): Manifest {
+  // Same pool root planApply uses by default (join(home, '.ccprofiles', 'shared')). A
+  // profile-dir entry symlinked to <sharedRoot>/<entry> is a pooled session dir, not a
+  // plain link — recording it as a link would make the next apply think sharing is off
+  // and "unshare" it, copying the whole shared pool back into this one profile's dir.
+  const sharedRoot = join(platform.home, '.ccprofiles', 'shared')
+
   const mcpServers: Manifest['mcpServers'] = {}
   for (const lp of live)
     for (const [name, def] of Object.entries(lp.mcpServers))
@@ -26,8 +34,14 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
 
   const profiles: ProfileDecl[] = live.map(lp => {
     const name = liveProfileName(lp)
+    const sessionEntries: readonly string[] = lp.agent === 'codex' ? CODEX_SHARED_ENTRIES : CLAUDE_SHARED_ENTRIES
     const links: Record<string, string> = {}
+    let sharedSessions = false
     for (const [entry, target] of Object.entries(lp.links)) {
+      if (sessionEntries.includes(entry) && target === join(sharedRoot, entry)) {
+        sharedSessions = true
+        continue
+      }
       const isHubLink = hubDirName && target.startsWith(live.find(o => o.dirName === hubDirName)!.dir)
       links[entry] = isHubLink ? 'hub' : toTemplate(target, platform)
     }
@@ -43,7 +57,7 @@ export function buildManifest(live: LiveProfile[], platform: Platform): Manifest
       mcp: Object.keys(lp.mcpServers).sort(),
       settingsEnv: lp.settingsEnv,
       skipPermissions: false,
-      sharedSessions: false,
+      sharedSessions,
       plugins: Object.entries(lp.enabledPlugins ?? {})
         .filter(([k, v]) => v && marketplaces[k.slice(k.lastIndexOf('@') + 1)])
         .map(([k]) => k).sort(),
