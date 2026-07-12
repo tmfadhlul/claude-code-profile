@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { parseManifest, serializeManifest, loadManifest, saveManifest, assertSafeManifest, ManifestError } from '../src/manifest.js'
+import { parseManifest, serializeManifest, loadManifest, saveManifest, assertSafeManifest, manifestHasPlaintextSecret, ManifestError } from '../src/manifest.js'
 
 const exec = promisify(execFile)
 
@@ -81,6 +81,15 @@ describe('manifest', () => {
       }
       await saveManifest(root, withRef as any)
       expect(await commitCount(root)).toBe(1)
+    })
+
+    describe('manifestHasPlaintextSecret', () => {
+      it('is true for yaml containing a plaintext Anthropic token', () => {
+        expect(manifestHasPlaintextSecret('ANTHROPIC_AUTH_TOKEN: sk-ant-xxxxxxxx')).toBe(true)
+      })
+      it('is false for yaml that only has secret:// refs', () => {
+        expect(manifestHasPlaintextSecret('ANTHROPIC_AUTH_TOKEN: secret://z-token')).toBe(false)
+      })
     })
   })
 

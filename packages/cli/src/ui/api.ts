@@ -2,7 +2,7 @@ import {
   discoverProfiles, buildManifest, saveManifest, executeApply,
   ensureRootGitignore, loadManifest, loadDevices, fetchRemote, fetchSecrets,
   writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
-  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, liveProfileName, scanSessions, readSessionTranscript, type Manifest,
+  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, liveProfileName, scanSessions, readSessionTranscript, manifestHasPlaintextSecret, type Manifest,
 } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync, mkdirSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
@@ -238,6 +238,9 @@ export function buildRoutes(ctx: CliContext): Route[] {
         if (remotes) problems.push(`${ctx.manifestRoot} has a git remote configured (${remotes.split('\n').join(', ')}) — manifest/secrets history could be pushed off this machine; run: git -C ${ctx.manifestRoot} remote remove <name>`)
       } catch { /* git optional */ }
     }
+    const manifestPath = join(ctx.manifestRoot, 'manifest.yaml')
+    if (existsSync(manifestPath) && manifestHasPlaintextSecret(readFileSync(manifestPath, 'utf8')))
+      problems.push(`plaintext secret in manifest.yaml — its git commit was skipped; run: ccprofiles secrets migrate`)
     sendJson(res, 200, { problems })
   })
 

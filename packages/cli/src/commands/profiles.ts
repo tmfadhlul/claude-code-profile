@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { discoverProfiles, liveProfileName, buildManifest, saveManifest, loadManifest, preserveSecretRefs, ensureRootGitignore } from 'ccprofiles-core'
+import { discoverProfiles, liveProfileName, buildManifest, saveManifest, loadManifest, preserveSecretRefs, ensureRootGitignore, manifestHasPlaintextSecret } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync, mkdirSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -79,6 +79,9 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
         if (remotes) problems.push(`${ctx.manifestRoot} has a git remote configured (${remotes.split('\n').join(', ')}) — manifest/secrets history could be pushed off this machine; run: git -C ${ctx.manifestRoot} remote remove <name>`)
       } catch { /* git optional */ }
     }
+    const manifestPath = join(ctx.manifestRoot, 'manifest.yaml')
+    if (existsSync(manifestPath) && manifestHasPlaintextSecret(readFileSync(manifestPath, 'utf8')))
+      problems.push(`plaintext secret in manifest.yaml — its git commit was skipped; run: ccprofiles secrets migrate`)
     if (problems.length === 0) { console.log('ok: no problems found'); return }
     for (const p of problems) console.log(`warn: ${p}`)
     process.exitCode = 1
