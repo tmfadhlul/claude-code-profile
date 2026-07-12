@@ -51,7 +51,9 @@ export async function reconcilePlugins(ctx: CliContext, m: Manifest, names: stri
     const dir = renderPath(pr.dir, ctx.platform)
     await restoreLegacyPluginSymlink(join(dir, 'plugins'))
     const lp = live.find(l => l.dir === dir)
-    const current = Object.entries(lp?.enabledPlugins ?? {}).filter(([, v]) => v).map(([k]) => k)
+    // "current" must be what is actually INSTALLED, not what settings.json claims is enabled —
+    // a stale enabled-but-never-installed entry would otherwise suppress the install forever.
+    const current = lp?.installedPlugins ?? []
     const lines = await reconcileProfilePlugins({ configDir: dir, desired: pr.plugins, current, marketplaces: m.marketplaces, runner })
     for (const line of lines) log.push(`${name}: ${line}`)
   }

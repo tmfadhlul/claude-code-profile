@@ -74,6 +74,26 @@ describe('discoverProfiles', () => {
     const x = live.find(p => p.dirName === '.claude-x')!
     expect(x.marketplaces).toEqual({ ponytail: { source: 'DietrichGebert/ponytail' } })
   })
+  it('reads installed plugin ids from installed_plugins.json (enabled-but-not-installed stays out)', async () => {
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-inst-'))
+    await mkdir(join(h, '.claude-x', 'plugins'), { recursive: true })
+    await writeFile(join(h, '.claude-x', '.claude.json'), '{}')
+    // enabledPlugins claims two plugins, but only one is actually installed
+    await writeFile(join(h, '.claude-x', 'settings.json'),
+      JSON.stringify({ enabledPlugins: { 'ponytail@ponytail': true, 'ghost@mkt': true } }))
+    await writeFile(join(h, '.claude-x', 'plugins', 'installed_plugins.json'),
+      JSON.stringify({ version: 2, plugins: { 'ponytail@ponytail': [{ scope: 'user' }] } }))
+    const live = await discoverProfiles(h)
+    const x = live.find(p => p.dirName === '.claude-x')!
+    expect(x.installedPlugins).toEqual(['ponytail@ponytail'])
+  })
+  it('installedPlugins is empty when installed_plugins.json is absent', async () => {
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-noinst-'))
+    await mkdir(join(h, '.claude-x'), { recursive: true })
+    await writeFile(join(h, '.claude-x', '.claude.json'), '{}')
+    const live = await discoverProfiles(h)
+    expect(live.find(p => p.dirName === '.claude-x')!.installedPlugins).toEqual([])
+  })
   it('discovers Codex homes and reads TOML MCP servers', async () => {
     const home4 = await mkdtemp(join(tmpdir(), 'ccp-disc-codex-'))
     await mkdir(join(home4, '.codex-work'), { recursive: true })

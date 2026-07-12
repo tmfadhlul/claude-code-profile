@@ -15,6 +15,10 @@ export interface LiveProfile {
   links: Record<string, string>
   settingsEnv: Record<string, string>
   enabledPlugins: Record<string, boolean>
+  /** Plugin ids actually installed (keys of plugins/installed_plugins.json) — the ground truth
+   *  for "present". enabledPlugins alone can be stale: an enabled-but-never-installed entry
+   *  (e.g. written by the retired union-sharing feature) must still trigger an install. */
+  installedPlugins: string[]
   marketplaces: Record<string, { source: string }>
 }
 
@@ -69,6 +73,11 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
         if (typeof repo === 'string') marketplaces[name] = { source: repo }
       }
     } catch { /* no plugins/known_marketplaces.json */ }
+    const installedPlugins: string[] = []
+    if (agent === 'claude') try {
+      const ip = JSON.parse(await readFile(join(dir, 'plugins', 'installed_plugins.json'), 'utf8'))
+      if (ip && typeof ip.plugins === 'object' && ip.plugins !== null) installedPlugins.push(...Object.keys(ip.plugins))
+    } catch { /* no plugins/installed_plugins.json */ }
     out.push({
       agent,
       dirName: e.name,
@@ -80,6 +89,7 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
       links,
       settingsEnv,
       enabledPlugins,
+      installedPlugins,
       marketplaces,
     })
   }

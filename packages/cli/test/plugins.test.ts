@@ -35,6 +35,18 @@ describe('plugins cli', () => {
     expect(m.marketplaces.ponytail.source).toBe('DietrichGebert/ponytail')
   })
 
+  it('installs a plugin that is enabled but not actually installed (stale enabledPlugins)', async () => {
+    // The reverted union-sharing feature wrote enabledPlugins entries into settings.json
+    // WITHOUT installing files. Reconcile must derive "current" from installed_plugins.json,
+    // not enabledPlugins — otherwise the install never runs and the plugin stays broken.
+    await writeFile(join(home, '.claude', 'settings.json'),
+      JSON.stringify({ enabledPlugins: { 'ponytail@ponytail': true } }))
+    await run('adopt', '--yes') // adopt records ponytail in the manifest (desired), from enabledPlugins
+    await run('plugins', 'add', 'ponytail@ponytail', '--profile', 'default')
+    expect(calls).toContain('add DietrichGebert/ponytail')
+    expect(calls).toContain('install ponytail@ponytail')
+  })
+
   it('add errors for an unknown marketplace without --marketplace', async () => {
     await run('adopt', '--yes')
     await expect(run('plugins', 'add', 'x@nope', '--profile', 'default')).rejects.toThrow(/marketplace/)

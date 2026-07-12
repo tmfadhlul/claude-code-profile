@@ -63,9 +63,11 @@ describe('ui api: plugins', () => {
   })
 
   it('DELETE reconciles against live current state and calls uninstall', async () => {
-    // seed live settings.json so discoverProfiles sees ponytail@ponytail already enabled — the
-    // fake runner never writes settings.json, so this is the only way `current` is non-empty.
+    // seed settings.json (feeds adopt → manifest desired) AND installed_plugins.json (feeds
+    // reconcile `current` — the fake runner never writes it, so this is the only way it's non-empty).
     await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'ponytail@ponytail': true } }))
+    await writeFile(join(home, '.claude', 'plugins', 'installed_plugins.json'),
+      JSON.stringify({ version: 2, plugins: { 'ponytail@ponytail': [{ scope: 'user' }] } }))
     await callApi(ctx, 'POST', '/api/adopt')
     const adopted = (await callApi(ctx, 'GET', '/api/plugins'))._json
     expect(adopted.profiles.find((p: any) => p.name === 'default').has).toContain('ponytail@ponytail')
