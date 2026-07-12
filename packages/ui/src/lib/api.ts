@@ -1,4 +1,7 @@
 const token = new URLSearchParams(location.search).get('t') ?? ''
+// Strip the token from the address bar once it's captured — it must not linger in
+// history, bookmarks, or anything that reads location.href after boot.
+history.replaceState(null, '', location.pathname + location.hash)
 
 async function req(method: string, path: string, body?: unknown): Promise<any> {
   const res = await fetch(path, {
@@ -11,11 +14,17 @@ async function req(method: string, path: string, body?: unknown): Promise<any> {
   return data
 }
 
+export type ProfilePatch = {
+  env?: Record<string, string>; links?: Record<string, string>; launcher?: string | null
+  settingsEnv?: Record<string, string>; skipPermissions?: boolean; sharedSessions?: boolean
+  mcp?: string[]
+}
+
 export const api = {
   profiles: () => req('GET', '/api/profiles'),
   adopt: () => req('POST', '/api/adopt'),
   createProfile: (name: string, agent: 'claude' | 'codex', from?: string) => req('POST', '/api/profiles', { name, agent, from }),
-  patchProfile: (name: string, patch: object) => req('PATCH', `/api/profiles/${encodeURIComponent(name)}`, patch),
+  patchProfile: (name: string, patch: ProfilePatch) => req('PATCH', `/api/profiles/${encodeURIComponent(name)}`, patch),
   deleteProfile: (name: string) => req('DELETE', `/api/profiles/${encodeURIComponent(name)}`),
   rc: () => req('GET', '/api/rc'),
   updateRc: () => req('POST', '/api/rc'),
@@ -39,5 +48,5 @@ export const api = {
   sessionTranscript: (agent: 'claude' | 'codex', scope: string, id: string) =>
     req('GET', `/api/sessions/${agent}/${encodeURIComponent(scope)}/${encodeURIComponent(id)}`),
   devices: () => req('GET', '/api/devices'),
-  sync: (from: string, withSecrets: boolean) => req('POST', '/api/sync', { from, withSecrets }),
+  sync: (from: string, withSecrets: boolean, dryRun?: boolean) => req('POST', '/api/sync', { from, withSecrets, dryRun }),
 }

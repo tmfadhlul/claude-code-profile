@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Check, Clipboard, Inbox, LoaderCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 export function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) {
@@ -65,6 +66,25 @@ export function CommandBox({ command, label = 'Copy command' }: { command: strin
         <Clipboard className="h-3.5 w-3.5" /> Copy
       </Button>
     </div>
+  )
+}
+
+// Shared destructive/high-impact confirmation dialog — reuse for anything that isn't
+// safely reversible (matrix "sync to all", secret detach, enabling skip-permissions, ...).
+export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, destructive, onConfirm, busy }: {
+  open: boolean; onOpenChange: (open: boolean) => void; title: string; description: ReactNode
+  confirmLabel: string; destructive?: boolean; onConfirm: () => void; busy?: boolean
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{title}</DialogTitle><p className="text-sm leading-6 text-muted-foreground">{description}</p></DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant={destructive ? 'destructive' : 'default'} disabled={busy} onClick={onConfirm}>{busy ? 'Working…' : confirmLabel}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
