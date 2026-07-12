@@ -22,4 +22,12 @@ describe('platform', () => {
     expect(toTemplate('/Users/x/.claude-oauth', mac)).toBe('{home}/.claude-oauth')
     expect(toTemplate('C:\\Users\\x\\.claude-oauth', win)).toBe('{home}/.claude-oauth')
   })
+  it('does not template a sibling dir that merely shares a string prefix with home', () => {
+    const p = detectPlatform({ osKind: 'darwin', home: '/Users/tm', shell: '/bin/zsh' })
+    expect(toTemplate('/Users/tmfadhlul-old/.claude', p)).toBe('/Users/tmfadhlul-old/.claude')
+  })
+  it('still templates home itself with no trailing separator', () => {
+    const p = detectPlatform({ osKind: 'darwin', home: '/Users/tm', shell: '/bin/zsh' })
+    expect(toTemplate('/Users/tm', p)).toBe('{home}')
+  })
 })

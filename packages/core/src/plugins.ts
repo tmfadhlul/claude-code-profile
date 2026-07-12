@@ -45,8 +45,14 @@ export async function restoreLegacyPluginSymlink(pluginsDir: string): Promise<bo
   try { st = await lstat(pluginsDir) } catch { return false }
   if (!st.isSymbolicLink()) return false
   const target = await readlink(pluginsDir)
+  // Never unlink-and-empty when the pool target is gone — that would silently leave the
+  // profile with a permanently empty plugins/ and no way to recover the original content.
+  // Leave the symlink in place and fail loudly instead.
+  if (!existsSync(target)) {
+    throw new Error(`cannot restore ${pluginsDir}: symlink target ${target} does not exist — leaving the symlink in place`)
+  }
   await unlink(pluginsDir)
   await mkdir(pluginsDir, { recursive: true })
-  if (existsSync(target)) await cp(target, pluginsDir, { recursive: true, force: false, errorOnExist: false })
+  await cp(target, pluginsDir, { recursive: true, force: false, errorOnExist: false })
   return true
 }
