@@ -16,10 +16,13 @@ export function claudeRunner(): PluginRunner {
     p.on('close', code => code === 0 ? resolve() : reject(new Error(err.trim() || `claude plugin ${args.join(' ')} exited ${code}`)))
   })
   return {
+    // '--' is defense-in-depth: it stops commander from parsing a value starting with '-' as a
+    // flag, so even if an unsafe id/source somehow reached here it can't inject argv options.
+    // (assertSafeManifest already rejects leading-'-' identifiers before this ever runs.)
     // marketplace add tolerates an already-added marketplace (install will fail clearly if truly missing)
-    marketplaceAdd: (cd, source) => run(cd, ['marketplace', 'add', source]).catch(() => {}),
-    install: (cd, id) => run(cd, ['install', id]),
-    uninstall: (cd, id) => run(cd, ['uninstall', id]),
+    marketplaceAdd: (cd, source) => run(cd, ['marketplace', 'add', '--', source]).catch(() => {}),
+    install: (cd, id) => run(cd, ['install', '--', id]),
+    uninstall: (cd, id) => run(cd, ['uninstall', '--', id]),
   }
 }
 

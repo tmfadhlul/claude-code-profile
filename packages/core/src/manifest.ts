@@ -51,12 +51,19 @@ export type Manifest = z.infer<typeof ManifestSchema>
 export type MarketplaceDef = z.infer<typeof MarketplaceSchema>
 
 // identifiers that get interpolated into shell launcher code must be injection-safe
-const SAFE_NAME = /^[A-Za-z0-9_-]+$/          // profile names, launcher names, secret refs
+// leading '-' is forbidden (but internal '-' still allowed) so a value can never be parsed as a
+// CLI flag when passed as a positional argv entry (e.g. `claude plugin install <id>`)
+const SAFE_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/ // profile names, launcher names, secret refs
 const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/ // POSIX/PowerShell env var names
 const SAFE_LINK_ENTRY = /^[A-Za-z0-9._-]+$/     // one profile-dir child; never a path
-const SAFE_SOURCE = /^[A-Za-z0-9._/@:-]+$/      // marketplace source (interpolated into `claude plugin` shell-out)
+const SAFE_SOURCE = /^[A-Za-z0-9._@:/][A-Za-z0-9._/@:-]*$/ // marketplace source (interpolated into `claude plugin` shell-out); no leading '-'
 const SHELL_META = /["`$;|&()\n\r<>]/         // chars that could break out of a quoted shell context
 const SECRET_PREFIX = 'secret://'
+
+/** Reject any path with a literal `..` path-traversal segment, on either `/` or `\` separators. */
+function hasDotDotSegment(path: string): boolean {
+  return path.split(/[/\\]/).includes('..')
+}
 
 /**
  * Reject manifests whose identifiers could break out of the shell launcher context.
@@ -68,6 +75,7 @@ export function assertSafeManifest(m: Manifest): void {
     if (!SAFE_NAME.test(p.name)) throw new ManifestError(`unsafe profile name: ${JSON.stringify(p.name)} (allowed: letters, digits, - _)`)
     if (p.launcher !== null && !SAFE_NAME.test(p.launcher)) throw new ManifestError(`unsafe launcher name in profile "${p.name}": ${JSON.stringify(p.launcher)}`)
     if (SHELL_META.test(p.dir)) throw new ManifestError(`unsafe profile dir in profile "${p.name}": ${JSON.stringify(p.dir)}`)
+    if (hasDotDotSegment(p.dir)) throw new ManifestError(`unsafe profile dir in profile "${p.name}": ${JSON.stringify(p.dir)} (must not contain a ".." segment)`)
     for (const [k, v] of Object.entries(p.env)) {
       if (!SAFE_ENV_KEY.test(k)) throw new ManifestError(`unsafe env var name in profile "${p.name}": ${JSON.stringify(k)}`)
       if (v.startsWith(SECRET_PREFIX)) {
