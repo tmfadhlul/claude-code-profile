@@ -23,9 +23,11 @@ export function ProfilesPage() {
   const [agent, setAgent] = useState<'claude' | 'codex'>('claude'); const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<ProfileRow | null>(null); const [deleting, setDeleting] = useState<ProfileRow | null>(null)
   const load = async () => {
-    try { setRows(await api.profiles()) } catch (e: any) { toast.error(e.message); setRows([]) }
-    try { setServers((await api.mcp()).servers) } catch { setServers([]) }
-    try { setSecretNames((await api.secrets()).names) } catch { setSecretNames([]) }
+    const [rowsR, mcpR, secretsR] = await Promise.allSettled([api.profiles(), api.mcp(), api.secrets()])
+    if (rowsR.status === 'fulfilled') setRows(rowsR.value)
+    else { toast.error(rowsR.reason?.message ?? String(rowsR.reason)); setRows([]) }
+    setServers(mcpR.status === 'fulfilled' ? mcpR.value.servers : [])
+    setSecretNames(secretsR.status === 'fulfilled' ? secretsR.value.names : [])
   }
   useEffect(() => { load() }, [])
   const filtered = useMemo(() => rows?.filter(r => `${r.name} ${r.agent} ${r.account ?? ''} ${providerHost(r)}`.toLowerCase().includes(query.toLowerCase())) ?? [], [rows, query])

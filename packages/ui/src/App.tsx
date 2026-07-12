@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Toaster } from '@/components/ui/sonner'
 import { StatusPage } from '@/pages/StatusPage'
 import { ProfilesPage } from '@/pages/ProfilesPage'
@@ -22,8 +22,23 @@ const NAV = [
 const TABS = NAV.flatMap((group) => group.items)
 type Tab = typeof TABS[number][0]
 
+const TAB_IDS: readonly string[] = TABS.map((t) => (t as readonly [string, string, unknown])[0])
+
+function tabFromHash(): Tab {
+  const h = location.hash.slice(1)
+  return (TAB_IDS.includes(h) ? h : 'status') as Tab
+}
+
 export default function App() {
-  const [tab, setTab] = useState<Tab>('status')
+  const [tab, setTabState] = useState<Tab>(() => tabFromHash())
+
+  // Back tab state with location.hash so refresh, deep-links, and browser back/forward work.
+  const setTab = (id: Tab) => { setTabState(id); if (location.hash.slice(1) !== id) location.hash = id }
+  useEffect(() => {
+    const onHashChange = () => setTabState(tabFromHash())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
 
   function page() {
     if (tab === 'profiles') return <ProfilesPage />
