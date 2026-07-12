@@ -3,7 +3,7 @@ import { mkdtemp } from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseManifest, serializeManifest, loadManifest, saveManifest, ManifestError } from '../src/manifest.js'
+import { parseManifest, serializeManifest, loadManifest, saveManifest, assertSafeManifest, ManifestError } from '../src/manifest.js'
 
 const sample = {
   version: 1 as const,
@@ -68,6 +68,62 @@ describe('manifest', () => {
     it('accepts a normal profile', () => {
       expect(() => parseManifest(withProfile({ launcher: 'cl-work', env: { TOKEN: 'secret://z-token' } }))).not.toThrow()
     })
+    it('rejects a profile name starting with a hyphen', () => {
+      expect(() => parseManifest(withProfile({ name: '--evil' }))).toThrow(/unsafe profile name/)
+    })
+    it('rejects a launcher starting with a hyphen', () => {
+      expect(() => parseManifest(withProfile({ launcher: '--evil' }))).toThrow(/unsafe launcher/)
+    })
+    it('still allows internal hyphens in a profile name and launcher', () => {
+      expect(() => parseManifest(withProfile({ name: 'my-profile', launcher: 'cl-my-launcher' }))).not.toThrow()
+    })
+    it.each(['{home}/..', '{home}/../etc', '{home}/foo/../../bar', '..\\evil', 'a/b/../c'])(
+      'rejects a profile dir containing a .. segment: %j',
+      dir => expect(() => parseManifest(withProfile({ dir }))).toThrow(/unsafe profile dir/),
+    )
+    it('rejects a marketplace name starting with a hyphen', () => {
+      expect(() => parseManifest(`
+version: 1
+hub: null
+profiles: []
+mcpServers: {}
+marketplaces:
+  '--evil': { source: 'owner/repo' }
+`)).toThrow(/unsafe marketplace name/)
+    })
+    it('rejects a marketplace source starting with a hyphen', () => {
+      expect(() => parseManifest(`
+version: 1
+hub: null
+profiles: []
+mcpServers: {}
+marketplaces:
+  bad: { source: '--evil-source' }
+`)).toThrow(/unsafe marketplace source|unsafe/)
+    })
+    it('rejects a plugin id whose name half starts with a hyphen (via parseManifest)', () => {
+      expect(() => parseManifest(`
+version: 1
+hub: null
+profiles:
+  - { name: a, dir: '{home}/.claude-a', launcher: cl-a, auth: env, plugins: [ '--flag@mkt' ] }
+mcpServers: {}
+marketplaces:
+  mkt: { source: 'owner/repo' }
+`)).toThrow(/unsafe plugin id/)
+    })
+    // marketplace-half case: assertSafeManifest's own SAFE_NAME check on the "@mkt" half of a
+    // plugin id — tested directly since parseManifest's earlier "undefined marketplace" guard
+    // (and a registered marketplace named "-mkt" would itself trip the marketplace-name check
+    // first) would otherwise mask which check actually rejected it.
+    it.each(['x@-mkt', '--flag@-mkt'])(
+      'assertSafeManifest rejects a plugin id whose marketplace half starts with a hyphen: %j',
+      id => expect(() => assertSafeManifest({
+        ...sample,
+        profiles: [{ ...sample.profiles[0], plugins: [id] }],
+        marketplaces: {},
+      } as any)).toThrow(/unsafe plugin id/),
+    )
   })
 
   describe('settingsEnv', () => {
