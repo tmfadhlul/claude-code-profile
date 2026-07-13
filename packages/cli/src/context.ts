@@ -18,7 +18,7 @@ import { registerUiCommand } from './ui/command.js'
 // createRequire (not a JSON import assertion) so this works under NodeNext ESM without
 // resolveJsonModule, and resolves the same way from src/ (ts-node/vitest) and dist/ (built) —
 // dist/../package.json is packages/cli/package.json, which npm always ships regardless of "files".
-const { version: cliVersion } = createRequire(import.meta.url)('../package.json') as { version: string }
+export const cliVersion = (createRequire(import.meta.url)('../package.json') as { version: string }).version
 
 export interface CliContext {
   home: string
@@ -69,7 +69,7 @@ export async function requireManifest(ctx: CliContext): Promise<Manifest> {
 
 export function buildProgram(ctx: CliContext): Command {
   const program = new Command('ccprofiles').description('Manage multiple Claude Code and Codex accounts/profiles (alias: clp)')
-  program.version(cliVersion)
+  program.version(cliVersion, '-v, --version', 'print the ccprofiles version')
   program.exitOverride() // throw instead of process.exit — required for tests
   registerProfileCommands(program, ctx)
   registerSessionCommands(program, ctx)

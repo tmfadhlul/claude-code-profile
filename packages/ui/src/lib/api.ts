@@ -48,5 +48,7 @@ export const api = {
   sessionTranscript: (agent: 'claude' | 'codex', scope: string, id: string) =>
     req('GET', `/api/sessions/${agent}/${encodeURIComponent(scope)}/${encodeURIComponent(id)}`),
   devices: () => req('GET', '/api/devices'),
+  pair: (b: { host: string; port: number; pin: string; name?: string }) => req('POST', '/api/pair', b),
+  version: () => req('GET', '/api/version'),
   sync: (from: string, withSecrets: boolean, dryRun?: boolean) => req('POST', '/api/sync', { from, withSecrets, dryRun }),
 }

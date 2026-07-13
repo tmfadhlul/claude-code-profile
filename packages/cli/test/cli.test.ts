@@ -49,6 +49,7 @@ describe('ccprofiles --version', () => {
     const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => { chunks.push(String(chunk)); return true })
     try {
       await expect(buildProgram(ctx).parseAsync(['node', 'ccp', '--version'])).rejects.toMatchObject({ code: 'commander.version' })
+    await expect(buildProgram(makeContext({ CCPROFILES_TEST_HOME: home, SHELL: '/bin/zsh' } as any)).parseAsync(['node', 'ccp', '-v'])).rejects.toMatchObject({ code: 'commander.version' })
     } finally {
       spy.mockRestore()
     }

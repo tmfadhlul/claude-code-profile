@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Toaster } from '@/components/ui/sonner'
+import { api } from '@/lib/api'
 import { StatusPage } from '@/pages/StatusPage'
 import { ProfilesPage } from '@/pages/ProfilesPage'
 import { McpPage } from '@/pages/McpPage'
@@ -64,6 +65,8 @@ export default function App() {
 
   const [theme, setTheme] = useState<ThemeChoice | null>(() => readStoredTheme())
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const [version, setVersion] = useState<string | null>(null)
+  useEffect(() => { api.version().then(r => setVersion(r.version)).catch(() => {}) }, [])
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches)
@@ -144,6 +147,7 @@ export default function App() {
         <div className="mx-4 mb-5 mt-5 hidden rounded-xl border border-white/10 bg-white/[0.035] p-4 lg:block">
           <div className="mb-2 flex items-center gap-2 text-xs font-bold text-[#a9bb99]"><span className="h-1.5 w-1.5 rounded-full bg-[#95aa82]" /> Local only</div>
           <p className="text-[0.69rem] leading-5 text-white/40">Credentials and profile state stay on this machine unless you explicitly sync.</p>
+          {version && <p className="mt-2 font-mono text-[0.66rem] text-white/30">ccprofiles v{version}</p>}
         </div>
       </aside>
 
