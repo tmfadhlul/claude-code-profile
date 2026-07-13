@@ -237,11 +237,10 @@ export function buildRoutes(ctx: CliContext): Route[] {
           problems.push(`plaintext token ${varName} in manifest for profile "${liveProfileName(lp)}" — run: secrets migrate`)
       }
     }
-    if (existsSync(ctx.platform.rcFile)) {
-      const rc = readFileSync(ctx.platform.rcFile, 'utf8')
-      const outside = rc.split('# >>> ccprofiles managed >>>')[0] + (rc.split('# <<< ccprofiles managed <<<')[1] ?? '')
-      if (/sk-ant-/.test(outside)) problems.push(`plaintext Anthropic key in ${ctx.platform.rcFile} — run secrets migrate`)
-    }
+    // Reuse `secrets migrate`'s own detection (dry-run) — see profiles.ts's doctor for why a
+    // separate regex here would let this warning and the fix command disagree.
+    const migratable = await migrateRcSecrets(ctx, { dryRun: true })
+    if (migratable.length) problems.push(`plaintext key(s) in ${ctx.platform.rcFile} (${migratable.join(', ')}) — run secrets migrate`)
     if (man) for (const pr of man.profiles) {
       const dir = pr.dir.replace('{home}', ctx.home)
       if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run apply`)

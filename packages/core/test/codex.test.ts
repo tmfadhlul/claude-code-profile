@@ -5,6 +5,9 @@ import { join } from 'node:path'
 import { parse } from 'smol-toml'
 import { executeApply, planApply } from '../src/apply.js'
 import { detectPlatform } from '../src/platform.js'
+import { discoverProfiles } from '../src/discovery.js'
+import { buildManifest } from '../src/adopt.js'
+import { parseManifest, serializeManifest } from '../src/manifest.js'
 import { isProjectScopedMcpServer, readCodexMcpServers, writeCodexMcpServers } from '../src/codex.js'
 import type { Manifest } from '../src/manifest.js'
 
@@ -26,6 +29,37 @@ describe('Codex apply', () => {
     const config = parse(await readFile(join(dir, 'config.toml'), 'utf8')) as any
     expect(config.model).toBe('gpt-5.4')
     expect(config.mcp_servers.context7.command).toBe('npx')
+  })
+
+  it('converges after adopt for a server with env + a vendor field placed before env in TOML source (real-world regression)', async () => {
+    // Reproduces a real ~/.codex/config.toml server def: an unknown-to-the-schema field
+    // (startup_timeout_sec) written BEFORE the env sub-table in TOML source order. TOML
+    // parsing preserves that source order; Zod's .passthrough() always places schema-known
+    // keys (command/args/env/type/url) before passthrough keys once the manifest round-trips
+    // through parseManifest — so live and manifest-derived defs differ only in JS key
+    // insertion order, which used to make `set-mcp-servers` fire forever.
+    const home = await mkdtemp(join(tmpdir(), 'ccp-codex-'))
+    await mkdir(join(home, '.codex'), { recursive: true })
+    await writeFile(join(home, '.codex', 'config.toml'), [
+      '[mcp_servers.node_repl]',
+      'command = "/usr/local/bin/node_repl"',
+      'args = []',
+      'startup_timeout_sec = 120',
+      '',
+      '[mcp_servers.node_repl.env]',
+      'FOO = "bar"',
+      'BAZ = "qux"',
+    ].join('\n'))
+    const platform = detectPlatform({ osKind: 'darwin', home, shell: '/bin/zsh' })
+
+    // adopt: discover live state, build + round-trip the manifest exactly like `clp adopt --yes`
+    const live1 = await discoverProfiles(home)
+    const built = buildManifest(live1, platform)
+    const manifest = parseManifest(serializeManifest(built)) // forces the Zod passthrough reordering
+
+    const live2 = await discoverProfiles(home)
+    const actions = planApply(manifest, live2, platform)
+    expect(actions.filter(a => a.kind === 'set-mcp-servers')).toEqual([]) // must already be in sync
   })
 })
 

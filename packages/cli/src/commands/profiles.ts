@@ -4,7 +4,7 @@ import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync, mkdirSy
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import type { CliContext } from '../context.js'
-import { KEY_VARS, secretsStore } from './secrets.js'
+import { KEY_VARS, secretsStore, migrateRcSecrets } from './secrets.js'
 
 export function registerProfileCommands(program: Command, ctx: CliContext): void {
   program.command('list').description('list Claude Code and Codex profiles').action(async () => {
@@ -64,11 +64,14 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
           problems.push(`plaintext token ${varName} in manifest for profile "${pname}" — run: secrets migrate`)
       }
     }
-    if (existsSync(ctx.platform.rcFile)) {
-      const rc = readFileSync(ctx.platform.rcFile, 'utf8')
-      const outsideBlock = rc.split('# >>> ccprofiles managed >>>')[0] + (rc.split('# <<< ccprofiles managed <<<')[1] ?? '')
-      if (/sk-ant-/.test(outsideBlock)) problems.push(`plaintext Anthropic key found in ${ctx.platform.rcFile} — run: ccprofiles secrets migrate`)
-    }
+    // Reuse `secrets migrate`'s OWN detection (dry-run — no writes) rather than a separate,
+    // looser regex: a prior loose `/sk-ant-/` substring check here could flag a line that
+    // `secrets migrate` could not actually act on (wrong var name, non-export syntax, or just
+    // a comment mentioning a key) — doctor would say "run secrets migrate" and migrate would
+    // report "no plaintext keys found", with no way to tell why. Calling the real matcher makes
+    // the two commands agree by construction.
+    const migratable = await migrateRcSecrets(ctx, { dryRun: true })
+    if (migratable.length) problems.push(`plaintext key(s) found in ${ctx.platform.rcFile} (${migratable.join(', ')}) — run: ccprofiles secrets migrate`)
     if (m) for (const pr of m.profiles) {
       const dir = pr.dir.replace('{home}', ctx.home)
       if (!existsSync(dir)) problems.push(`manifest profile "${pr.name}" missing on disk: ${dir} — run: ccprofiles apply`)
