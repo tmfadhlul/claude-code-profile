@@ -78,13 +78,25 @@ describe('cross-agent shared assets', () => {
     await expect(readdir(join(backupRoot, stampValue))).rejects.toThrow()
   })
 
-  it.each(['hub/skills/../../outside', 'hub\\skills\\outside', 'profiles/codex/../AGENTS.md', 'unknown/file'])(
+  it.each(['hub/skills/../../outside', 'hub\\skills\\outside', 'profiles/codex/../AGENTS.md', 'unknown/file', 'hub/plugins/cache/x/y.js'])(
     'rejects unsafe imported asset path %j',
     async rel => {
       const platform = detectPlatform({ home, shell: '/bin/zsh' })
       await expect(writeAssets({ [rel]: 'owned' }, codexHub(), platform)).rejects.toThrow(/unsafe asset path/)
     },
   )
+
+  it('never walks or collects the hub plugins/ directory (plugins sync via the manifest, not raw files)', async () => {
+    // plugins/ holds marketplace clones + installed-plugin caches, routinely GBs on a real
+    // machine — collecting it as a hub asset previously blew past V8's max string length in
+    // sealJson. Seed a file there and confirm it's never even read into the asset map.
+    await mkdir(join(home, '.codex', 'plugins', 'cache', 'some-marketplace'), { recursive: true })
+    await writeFile(join(home, '.codex', 'plugins', 'cache', 'some-marketplace', 'index.js'), 'module.exports = {}')
+    await mkdir(join(home, '.codex', 'skills'), { recursive: true }) // hub dir must exist for collectAssets to run at all
+    const platform = detectPlatform({ home, shell: '/bin/zsh' })
+    const assets = await collectAssets(codexHub(), platform)
+    expect(Object.keys(assets).some(k => k.startsWith('hub/plugins/'))).toBe(false)
+  })
 
   it('refuses to write imported assets through a symlinked directory', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'ccp-assets-outside-'))
