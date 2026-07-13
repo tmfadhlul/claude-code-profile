@@ -1,13 +1,13 @@
 import {
   discoverProfiles, buildManifest, saveManifest, executeApply,
-  ensureRootGitignore, loadManifest, loadDevices, fetchRemote, fetchSecrets,
+  ensureRootGitignore, loadManifest, loadDevices, saveDevices, pairWithServer, fetchRemote, fetchSecrets,
   writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
   atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, liveProfileName, scanSessions, readSessionTranscript, manifestHasPlaintextSecret, type Manifest,
 } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync, mkdirSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { requireManifest, type CliContext } from '../context.js'
+import { requireManifest, cliVersion, type CliContext } from '../context.js'
 import { secretsStore, migrateRcSecrets, migrateSettingsSecrets, KEY_VARS } from '../commands/secrets.js'
 import { reconcilePlugins } from '../commands/plugins.js'
 import { sendJson, readJson, HttpError, type Route } from './http.js'
@@ -469,6 +469,27 @@ export function buildRoutes(ctx: CliContext): Route[] {
   })
 
   // ── devices / sync ──────────────────────────────────────────────────────────
+  add('GET', /^\/api\/version$/, async (_m, _req, res) => {
+    sendJson(res, 200, { version: cliVersion })
+  })
+
+  // Pair with a serving device from the dashboard — same flow as `clp pair`.
+  add('POST', /^\/api\/pair$/, async (_m, req, res) => {
+    const { host, port, pin, name } = await readJson<{ host: string; port: number | string; pin: string; name?: string }>(req)
+    if (!host || typeof host !== 'string' || /\s/.test(host)) throw new HttpError(400, 'host required')
+    const portNum = Number(port)
+    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) throw new HttpError(400, 'port must be an integer between 1 and 65535')
+    if (!pin || typeof pin !== 'string') throw new HttpError(400, 'pin required')
+    const devName = (typeof name === 'string' && name.trim()) ? name.trim() : host
+    let device
+    try { device = await pairWithServer(host, portNum, pin, devName) }
+    catch (e) { throw new HttpError(400, (e as Error).message) } // wrong pin / unreachable / MITM check
+    const devices = (await loadDevices(ctx.manifestRoot)).filter(d => d.name !== device.name)
+    devices.push(device)
+    await saveDevices(ctx.manifestRoot, devices)
+    sendJson(res, 200, { name: device.name, host: device.host, port: device.port })
+  })
+
   add('GET', /^\/api\/devices$/, async (_m, _req, res) => {
     sendJson(res, 200, await loadDevices(ctx.manifestRoot))
   })

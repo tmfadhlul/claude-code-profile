@@ -18,6 +18,12 @@ beforeEach(async () => {
 })
 
 describe('ui api: adopt/profiles/status/apply/doctor', () => {
+  it('GET /api/version returns the CLI version', async () => {
+    const res = await callApi(ctx, 'GET', '/api/version')
+    expect(res._status).toBe(200)
+    expect(res._json.version).toMatch(/^\d+\.\d+\.\d+/)
+  })
+
   it('adopt then profiles lists the discovered profile', async () => {
     await callApi(ctx, 'POST', '/api/adopt')
     const res = await callApi(ctx, 'GET', '/api/profiles')

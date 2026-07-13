@@ -222,6 +222,8 @@ clp pair 192.168.1.10 --port 51234 --pin 123456 --name mac
 clp sync --from mac --with-secrets
 ```
 
+Prefer the dashboard? `clp ui` → **Sync** → **Pair device** (host, port, PIN), then pull with a dry-run preview — no CLI needed on the receiving machine.
+
 Manifest, MCP servers, skills, commands, launcher functions, plugin declarations, and (opt-in) secrets all arrive — rendered for the local OS: PowerShell profile functions and junctions on Windows, `.zshrc`/`.bashrc` functions and symlinks elsewhere. Plugins are then **installed to match** via `claude plugin` (needs `claude` on PATH; if that step can't run, `clp plugins apply --all` finishes the job).
 
 Two things intentionally don't travel:
@@ -239,7 +241,7 @@ A local panel to manage everything the CLI does — and the easiest way to set p
 
 - **Profiles** — create, edit, and delete profiles from a form: launcher function, environment variables, links, MCP toggles, a **guided Provider section** (preset picker for z.ai / mimo / OpenRouter / Anthropic-default / Custom, labeled base-URL / token / model fields, copy-from-another-profile, and an *Advanced* raw editor for any other `settings.json` env var), and a **Skip permissions** toggle that adds `--dangerously-skip-permissions` to that profile's launcher (⚠ bypasses every confirmation — launcher profiles only). Deleting a profile is manifest-only — the `~/.claude-*` directory stays on disk.
 - **Shell RC** — preview the managed block in your `.zshrc`/`.bashrc` vs. what the manifest renders, with a one-click update.
-- **Sessions** (Claude + Codex shared-history viewer with an in-dashboard transcript reader), **MCP servers** and **Plugins** (interactive matrices), **Secrets** (add / reveal / delete / migrate, plus attach a secret to a profile as an env var), **Sync** (with a dry-run preview before pulling), and **Doctor**.
+- **Sessions** (Claude + Codex shared-history viewer with an in-dashboard transcript reader), **MCP servers** and **Plugins** (interactive matrices), **Secrets** (add / reveal / delete / migrate, plus attach a secret to a profile as an env var), **Sync** (pair devices and pull, with a dry-run preview before applying), and **Doctor**.
 - **Dark mode** — follows your OS theme, with a persisted toggle in the sidebar. Destructive actions (sync-to-all, skip-permissions, secret detach/delete) ask for confirmation.
 
 It's **localhost-only** and guarded by a per-launch session token plus an Origin check, so nothing off your machine (and no website in your browser) can reach the API. Pass `--no-open` to just print the URL, or `--port <n>` to pin the port.
@@ -293,7 +295,6 @@ All mutating commands support `--dry-run`. Every mutation backs up the files it 
 ## Roadmap
 
 - mDNS auto-discovery for `clp devices`
-- Pair devices from the dashboard (currently CLI-only)
 - Interactive prompts (`secrets set` without echoing, `adopt` confirmation)
 
 ## Development

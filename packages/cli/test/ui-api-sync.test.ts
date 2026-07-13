@@ -37,6 +37,24 @@ beforeEach(async () => {
 afterEach(async () => { await server.close() })
 
 describe('ui api: sync', () => {
+  it('POST /api/pair pairs with a live server and persists the device', async () => {
+    const res = await callApi(myCtx, 'POST', '/api/pair', { host: '127.0.0.1', port: server.port, pin: '111222', name: 'peer2' })
+    expect(res._status).toBe(200)
+    expect(res._json.name).toBe('peer2')
+    expect((await callApi(myCtx, 'GET', '/api/devices'))._json.map((d: any) => d.name)).toContain('peer2')
+  })
+
+  it('POST /api/pair rejects a wrong pin without persisting', async () => {
+    const res = await callApi(myCtx, 'POST', '/api/pair', { host: '127.0.0.1', port: server.port, pin: '999999', name: 'bad' })
+    expect(res._status).toBe(400)
+    expect((await callApi(myCtx, 'GET', '/api/devices'))._json.map((d: any) => d.name)).not.toContain('bad')
+  })
+
+  it('POST /api/pair validates inputs', async () => {
+    expect((await callApi(myCtx, 'POST', '/api/pair', { host: '', port: 1, pin: 'x' }))._status).toBe(400)
+    expect((await callApi(myCtx, 'POST', '/api/pair', { host: 'h', port: 99999999, pin: 'x' }))._status).toBe(400)
+  })
+
   it('lists devices and pulls a manifest', async () => {
     expect((await callApi(myCtx, 'GET', '/api/devices'))._json.map((d: any) => d.name)).toContain('peer')
     const res = await callApi(myCtx, 'POST', '/api/sync', { from: 'peer' })
