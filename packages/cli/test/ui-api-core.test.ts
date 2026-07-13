@@ -50,6 +50,11 @@ describe('ui api: adopt/profiles/status/apply/doctor', () => {
     const res = await callApi(ctx, 'GET', '/api/doctor')
     expect(Array.isArray(res._json.problems)).toBe(true)
   })
+  it('doctor flags a plaintext rc key using the same detection secrets migrate uses', async () => {
+    await writeFile(join(home, '.zshrc'), 'export ANTHROPIC_API_KEY="sk-ant-api03-UITEST"\n')
+    const res = await callApi(ctx, 'GET', '/api/doctor')
+    expect(res._json.problems.some((p: string) => p.includes('anthropic-api-key'))).toBe(true)
+  })
   it('doctor warns when the manifest root git repo has a remote configured', async () => {
     await callApi(ctx, 'POST', '/api/adopt')
     const { execFileSync } = await import('node:child_process')

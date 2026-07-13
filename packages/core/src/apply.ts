@@ -23,8 +23,27 @@ function configPathFor(dir: string, home: string, agent: 'claude' | 'codex'): st
   return dir === join(home, '.claude') ? join(home, '.claude.json') : join(dir, '.claude.json')
 }
 
-function sortKeys(o: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)))
+/**
+ * Deep, order-insensitive normalization for drift comparison. Plain-object keys are sorted
+ * recursively at every depth (array element order is preserved — arrays like `args` are
+ * order-significant). Without recursing into nested objects, two semantically identical
+ * server defs could compare unequal purely from key-insertion order — which genuinely
+ * happens: Zod's `.passthrough()` always places schema-declared keys before passthrough
+ * (unknown) keys in its output, e.g. Codex's `startup_timeout_sec` (not in McpServerSchema)
+ * ends up after `env` once a manifest round-trips through the schema, while the live
+ * TOML file has it before `env` in source order — a manifest reload would otherwise never
+ * converge to "in sync" for any Codex server combining an `env` table with a vendor field.
+ */
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([k, v]) => [k, sortKeys(v)] as const)
+        .sort(([a], [b]) => a.localeCompare(b)),
+    )
+  }
+  return value
 }
 
 const SECRET_PREFIX = 'secret://'

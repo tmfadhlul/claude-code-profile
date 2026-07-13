@@ -71,3 +71,53 @@ describe('doctor: warns on a configured git remote in ~/.ccprofiles', () => {
     expect(lines.join('\n')).toMatch(/git remote configured/)
   })
 })
+
+describe('doctor: rc-file plaintext-key warning always agrees with `secrets migrate`', () => {
+  it('does not warn about a key `secrets migrate` cannot actually fix', async () => {
+    // Previously doctor used a separate, looser /sk-ant-/ substring check while `secrets
+    // migrate` only rewrites `export KEY_VARS_NAME=sk-...` lines it recognizes — so a comment
+    // or an export under an unsupported variable name made doctor say "run secrets migrate"
+    // while migrate replied "no plaintext keys found", with no way out for the user.
+    const rcHome = await mkdtemp(join(tmpdir(), 'ccp-doctor-rc-'))
+    await mkdir(join(rcHome, '.claude'))
+    await writeFile(join(rcHome, '.claude.json'), JSON.stringify({ mcpServers: {}, oauthAccount: { emailAddress: 'me@personal.com' } }))
+    await seedRc(rcHome, [
+      '# reminder: my old key used to be sk-ant-api03-RETIRED, rotated already',
+      'export SOME_OTHER_TOOL_KEY="sk-ant-api03-NOTOURS"',
+      '',
+    ].join('\n'))
+    const ctx = makeContext({ CCPROFILES_TEST_HOME: rcHome, CCPROFILES_PASSPHRASE: 'pw', SHELL: '/bin/zsh' } as any)
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'adopt', '--yes'])
+
+    const lines: string[] = []
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a) => { lines.push(a.join(' ')) })
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'doctor'])
+    spy.mockRestore()
+    expect(lines.join('\n')).not.toMatch(/plaintext key/)
+
+    // and secrets migrate genuinely has nothing to do here, matching doctor's silence
+    const migrateLines: string[] = []
+    const migrateSpy = vi.spyOn(console, 'log').mockImplementation((...a) => { migrateLines.push(a.join(' ')) })
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'secrets', 'migrate'])
+    migrateSpy.mockRestore()
+    expect(migrateLines.join('\n')).toMatch(/no plaintext keys found/)
+  })
+
+  it('warns about, and secrets migrate fixes, a genuinely migratable key', async () => {
+    const rcHome = await mkdtemp(join(tmpdir(), 'ccp-doctor-rc-fix-'))
+    await mkdir(join(rcHome, '.claude'))
+    await writeFile(join(rcHome, '.claude.json'), JSON.stringify({ mcpServers: {}, oauthAccount: { emailAddress: 'me@personal.com' } }))
+    await seedRc(rcHome, envKeyLine('ANTHROPIC_API_KEY', 'sk-ant-api03-REAL') + '\n')
+    const ctx = makeContext({ CCPROFILES_TEST_HOME: rcHome, CCPROFILES_PASSPHRASE: 'pw', SHELL: '/bin/zsh' } as any)
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'adopt', '--yes'])
+
+    const lines: string[] = []
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a) => { lines.push(a.join(' ')) })
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'doctor'])
+    spy.mockRestore()
+    expect(lines.join('\n')).toMatch(/plaintext key.*anthropic-api-key.*run: ccprofiles secrets migrate/)
+
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'secrets', 'migrate'])
+    expect(await readFile(rcFileFor(rcHome), 'utf8')).not.toContain('sk-ant-api03-REAL')
+  })
+})
