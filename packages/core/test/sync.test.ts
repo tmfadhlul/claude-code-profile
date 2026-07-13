@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -49,6 +49,30 @@ describe('LAN sync', () => {
   it('rejects unknown token', async () => {
     const device = { name: 'x', host: '127.0.0.1', port: server.port, token: 'bogus', key: Buffer.alloc(32).toString('base64') }
     await expect(fetchRemote(device)).rejects.toThrow(/unknown token/)
+  })
+})
+
+describe('/manifest error handling', () => {
+  it('logs the real cause locally while returning a generic error to the caller', async () => {
+    // the serving machine never ran `clp adopt --yes` — manifestRoot exists but has no manifest.yaml.
+    // This must not leak path/parse details to the network caller, but MUST be diagnosable by
+    // whoever runs `ccprofiles serve` (their own terminal, never sent over the wire).
+    const root = await mkdtemp(join(tmpdir(), 'ccp-noadopt-'))
+    await mkdir(root, { recursive: true })
+    const p = detectPlatform({ osKind: process.platform as any, home: root, shell: '/bin/zsh' })
+    const s = await startSyncServer({ manifestRoot: root, platform: p, pin: '333444' })
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      const device = await pairWithServer('127.0.0.1', s.port, '333444', 'peer')
+      await expect(fetchRemote(device)).rejects.toThrow(/\/manifest: internal error/)
+      // server-local log carries the real error — never sent to the client
+      const logged = stderrSpy.mock.calls.map(c => String(c[0])).join('\n')
+      expect(logged).toMatch(/ccprofiles serve error/)
+      expect(logged).toMatch(/manifest\.yaml/)
+    } finally {
+      stderrSpy.mockRestore()
+      await s.close()
+    }
   })
 })
 

@@ -118,8 +118,11 @@ export async function startSyncServer(
       }
 
       return send(res, 404, { error: 'not found' })
-    } catch {
-      // never leak internal error detail (paths, parse internals) to callers
+    } catch (e) {
+      // never leak internal error detail (paths, parse internals) to callers — but log it
+      // locally (this process's own stderr, never sent over the wire) so whoever runs
+      // `ccprofiles serve` can actually diagnose the failure instead of a bare 500.
+      process.stderr.write(`ccprofiles serve error: ${(e as Error).stack ?? e}\n`)
       return send(res, 500, { error: 'internal error' })
     }
   })
