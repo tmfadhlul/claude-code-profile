@@ -6,7 +6,13 @@ import { renderPath, type Platform } from './platform.js'
 import { atomicWrite, backupFiles } from './fsutil.js'
 import { physicalLinkEntry } from './links.js'
 
-const HUB_DIRS = ['skills', 'commands', 'plugins']
+// Deliberately NOT 'plugins': plugin state syncs via the manifest's declarative
+// `plugins[]`/`marketplaces{}` fields (already inside manifestYaml) plus a `claude plugin
+// install` reconcile after sync/import — never by copying the plugins/ directory tree.
+// That tree is marketplace git clones + installed plugin caches, routinely multi-GB; walking
+// and JSON.stringify-ing it here blew past V8's max string length in sealJson on a real user's
+// machine (their ~/.claude-oauth/plugins/ alone was 3.9 GB).
+const HUB_DIRS = ['skills', 'commands']
 
 function safeParts(rel: string): string[] {
   if (rel.includes('\\') || rel.includes('\0')) throw new Error(`unsafe asset path: ${JSON.stringify(rel)}`)
