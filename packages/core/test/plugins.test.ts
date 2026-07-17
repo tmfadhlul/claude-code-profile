@@ -3,11 +3,59 @@ import { mkdtemp, mkdir, writeFile, symlink, lstat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { planPluginReconcile, marketplaceOf, reconcileProfilePlugins, restoreLegacyPluginSymlink, type PluginRunner } from '../src/plugins.js'
+import { planPluginReconcile, planPluginVersionDrift, marketplaceOf, reconcileProfilePlugins, restoreLegacyPluginSymlink, type PluginRunner } from '../src/plugins.js'
 
 describe('planPluginReconcile', () => {
   it('diffs desired vs current', () => {
-    expect(planPluginReconcile(['a@m', 'b@m'], ['b@m', 'c@m'])).toEqual({ install: ['a@m'], uninstall: ['c@m'] })
+    expect(planPluginReconcile(['a@m', 'b@m'], ['b@m', 'c@m'])).toEqual({ install: ['a@m'], uninstall: ['c@m'], update: [] })
+  })
+
+  it('updates a drifted id that is both desired and already installed', () => {
+    expect(planPluginReconcile(['a@m', 'b@m'], ['a@m', 'b@m'], ['b@m'])).toEqual({ install: [], uninstall: [], update: ['b@m'] })
+  })
+
+  it('does not update an id it is already installing or uninstalling', () => {
+    // install/uninstall already lands the latest version — an update on top would be a no-op at
+    // best, and for an uninstalled id it would fail outright.
+    expect(planPluginReconcile(['a@m'], ['b@m'], ['a@m', 'b@m'])).toEqual({ install: ['a@m'], uninstall: ['b@m'], update: [] })
+  })
+})
+
+describe('planPluginVersionDrift', () => {
+  const p = (name: string, versions: Record<string, string>) => ({ name, versions })
+
+  it('flags a plugin installed at different versions across profiles', () => {
+    expect(planPluginVersionDrift([
+      p('claude', { 'claude-mem@thedotmack': '13.10.4' }),
+      p('claude-oauth', { 'claude-mem@thedotmack': '13.11.0' }),
+    ])).toEqual([{ id: 'claude-mem@thedotmack', byProfile: { claude: '13.10.4', 'claude-oauth': '13.11.0' } }])
+  })
+
+  it('is quiet when every profile agrees', () => {
+    expect(planPluginVersionDrift([
+      p('a', { 'x@m': '1.0.0' }), p('b', { 'x@m': '1.0.0' }), p('c', { 'x@m': '1.0.0' }),
+    ])).toEqual([])
+  })
+
+  it('does not treat a profile simply missing the plugin as drift', () => {
+    // that is planPluginReconcile's install/uninstall job, not a version problem
+    expect(planPluginVersionDrift([p('a', { 'x@m': '1.0.0' }), p('b', {})])).toEqual([])
+  })
+
+  it('reports every drifting profile, not just the first pair', () => {
+    const [d] = planPluginVersionDrift([
+      p('a', { 'x@m': '1.0.0' }), p('b', { 'x@m': '2.0.0' }), p('c', { 'x@m': '3.0.0' }),
+    ])
+    expect(d.byProfile).toEqual({ a: '1.0.0', b: '2.0.0', c: '3.0.0' })
+  })
+
+  it('reproduces the 2026-07-16 incident: three profiles, one drifting plugin', () => {
+    const drift = planPluginVersionDrift([
+      p('claude', { 'claude-mem@thedotmack': '13.10.4', 'ponytail@ponytail': '4.8.4' }),
+      p('claude-oauth', { 'claude-mem@thedotmack': '13.11.0', 'ponytail@ponytail': '4.8.4' }),
+      p('claude-data-plb', { 'claude-mem@thedotmack': '13.10.4', 'ponytail@ponytail': '4.8.4' }),
+    ])
+    expect(drift.map(d => d.id)).toEqual(['claude-mem@thedotmack']) // ponytail agrees everywhere
   })
 })
 
@@ -24,6 +72,7 @@ function fakeRunner() {
     marketplaceAdd: async (_d, s) => { calls.push(`add ${s}`) },
     install: async (_d, id) => { calls.push(`install ${id}`) },
     uninstall: async (_d, id) => { calls.push(`uninstall ${id}`) },
+    update: async (_d, id) => { calls.push(`update ${id}`) },
   }
   return { runner, calls }
 }
@@ -44,6 +93,24 @@ describe('reconcileProfilePlugins', () => {
       'add o/ponytail', 'install ponytail@ponytail',
       'add o/cm', 'install claude-mem@thedotmack',
     ])
+  })
+
+  it('updates a drifted plugin that is already installed', async () => {
+    const { runner, calls } = fakeRunner()
+    await reconcileProfilePlugins({
+      configDir: '/cfg', desired: ['claude-mem@thedotmack'], current: ['claude-mem@thedotmack'],
+      marketplaces: { thedotmack: { source: 'o/cm' } }, runner, updateIds: ['claude-mem@thedotmack'],
+    })
+    expect(calls).toEqual(['update claude-mem@thedotmack'])
+  })
+
+  it('leaves a non-drifting profile completely alone', async () => {
+    const { runner, calls } = fakeRunner()
+    await reconcileProfilePlugins({
+      configDir: '/cfg', desired: ['a@m'], current: ['a@m'],
+      marketplaces: { m: { source: 'o/m' } }, runner, updateIds: [],
+    })
+    expect(calls).toEqual([])
   })
 
   it('does not re-add a marketplace already needed twice', async () => {

@@ -72,6 +72,44 @@ describe('doctor: warns on a configured git remote in ~/.ccprofiles', () => {
   })
 })
 
+describe('doctor: cross-profile plugin version drift', () => {
+  // Regression for the 2026-07-16 incident: .claude was on claude-mem 13.10.4 while .claude-oauth
+  // was on 13.11.0. Both share one ~/.claude-mem worker, so each session killed the other's worker
+  // and respawned its own — orphaning a chroma-mcp pair every cycle until swap ran out. Presence
+  // parity was already green throughout; only version parity would have caught it.
+  async function driftHome(vA: string, vB: string): Promise<string> {
+    const h = await mkdtemp(join(tmpdir(), 'ccp-e2e-drift-'))
+    for (const [dirName, cfg, version] of [['.claude', join(h, '.claude.json'), vA], ['.claude-oauth', join(h, '.claude-oauth', '.claude.json'), vB]] as const) {
+      await mkdir(join(h, dirName, 'plugins'), { recursive: true })
+      await writeFile(cfg, JSON.stringify({ mcpServers: {}, oauthAccount: { emailAddress: `${dirName}@x.com` } }))
+      await writeFile(join(h, dirName, 'plugins', 'installed_plugins.json'), JSON.stringify({
+        version: 2, plugins: { 'claude-mem@thedotmack': [{ scope: 'user', version }] },
+      }))
+    }
+    return h
+  }
+  async function doctorOn(h: string): Promise<string> {
+    const lines: string[] = []
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a) => { lines.push(a.join(' ')) })
+    const ctx = makeContext({ CCPROFILES_TEST_HOME: h, CCPROFILES_PASSPHRASE: 'pw', SHELL: '/bin/zsh' } as any)
+    await buildProgram(ctx).parseAsync(['node', 'ccp', 'doctor'])
+    spy.mockRestore()
+    return lines.join('\n')
+  }
+
+  it('warns when one plugin sits at two versions across profiles', async () => {
+    const out = await doctorOn(await driftHome('13.10.4', '13.11.0'))
+    expect(out).toMatch(/claude-mem@thedotmack.*differs across profiles/)
+    expect(out).toContain('13.10.4')
+    expect(out).toContain('13.11.0')
+  })
+
+  it('stays quiet once every profile agrees', async () => {
+    const out = await doctorOn(await driftHome('13.11.0', '13.11.0'))
+    expect(out).not.toMatch(/differs across profiles/)
+  })
+})
+
 describe('doctor: rc-file plaintext-key warning always agrees with `secrets migrate`', () => {
   it('does not warn about a key `secrets migrate` cannot actually fix', async () => {
     // Previously doctor used a separate, looser /sk-ant-/ substring check while `secrets
