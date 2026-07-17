@@ -1,7 +1,7 @@
 import type { Command } from 'commander'
 import {
-  discoverProfiles, saveManifest, reconcileProfilePlugins, restoreLegacyPluginSymlink,
-  renderPath, type PluginRunner, type Manifest,
+  discoverProfiles, liveProfileName, saveManifest, reconcileProfilePlugins, restoreLegacyPluginSymlink,
+  planPluginVersionDrift, renderPath, type PluginRunner, type Manifest,
 } from 'ccprofiles-core'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
@@ -23,6 +23,7 @@ export function claudeRunner(): PluginRunner {
     marketplaceAdd: (cd, source) => run(cd, ['marketplace', 'add', '--', source]).catch(() => {}),
     install: (cd, id) => run(cd, ['install', '--', id]),
     uninstall: (cd, id) => run(cd, ['uninstall', '--', id]),
+    update: (cd, id) => run(cd, ['update', '--', id]),
   }
 }
 
@@ -44,6 +45,15 @@ function targets(m: Manifest, opts: { profile?: string; all?: boolean }): string
 export async function reconcilePlugins(ctx: CliContext, m: Manifest, names: string[]): Promise<string[]> {
   const runner = ctx.pluginRunner ?? claudeRunner()
   const live = await discoverProfiles(ctx.home)
+  // Drift is a property of the WHOLE set of claude profiles, not of the ones being reconciled, so
+  // it is computed once over all of them up front. A drifted plugin is then updated in every
+  // targeted profile that has it — not just the laggard — because `claude plugin update` only ever
+  // moves to the marketplace's latest. Updating the laggard alone would leave it on a newer latest
+  // than the profile that was already ahead, i.e. still drifting.
+  const drift = planPluginVersionDrift(
+    live.filter(l => l.agent === 'claude').map(l => ({ name: liveProfileName(l), versions: l.installedPluginVersions })),
+  )
+  const updateIds = drift.map(d => d.id)
   const log: string[] = []
   for (const name of names) {
     const pr = m.profiles.find(p => p.name === name)!
@@ -54,7 +64,7 @@ export async function reconcilePlugins(ctx: CliContext, m: Manifest, names: stri
     // "current" must be what is actually INSTALLED, not what settings.json claims is enabled —
     // a stale enabled-but-never-installed entry would otherwise suppress the install forever.
     const current = lp?.installedPlugins ?? []
-    const lines = await reconcileProfilePlugins({ configDir: dir, desired: pr.plugins, current, marketplaces: m.marketplaces, runner })
+    const lines = await reconcileProfilePlugins({ configDir: dir, desired: pr.plugins, current, marketplaces: m.marketplaces, runner, updateIds })
     for (const line of lines) log.push(`${name}: ${line}`)
   }
   return log

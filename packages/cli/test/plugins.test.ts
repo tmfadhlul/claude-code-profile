@@ -11,6 +11,7 @@ function fake(): PluginRunner {
     marketplaceAdd: async (_d, s) => { calls.push(`add ${s}`) },
     install: async (_d, id) => { calls.push(`install ${id}`) },
     uninstall: async (_d, id) => { calls.push(`uninstall ${id}`) },
+    update: async (_d, id) => { calls.push(`update ${id}`) },
   }
 }
 beforeEach(async () => {

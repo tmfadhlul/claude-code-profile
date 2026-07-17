@@ -87,6 +87,62 @@ describe('discoverProfiles', () => {
     const x = live.find(p => p.dirName === '.claude-x')!
     expect(x.installedPlugins).toEqual(['ponytail@ponytail'])
   })
+  it('reads installed plugin versions, falling back to the git sha when there is no release', async () => {
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-ver-'))
+    await mkdir(join(h, '.claude-x', 'plugins'), { recursive: true })
+    await writeFile(join(h, '.claude-x', '.claude.json'), '{}')
+    await writeFile(join(h, '.claude-x', 'plugins', 'installed_plugins.json'), JSON.stringify({
+      version: 2,
+      plugins: {
+        'claude-mem@thedotmack': [{ scope: 'user', version: '13.11.0', gitCommitSha: 'f5633c1f8418' }],
+        // sha-pinned plugin, 'unknown' spelling — must resolve to the sha, not to 'unknown'
+        'context7@claude-plugins-official': [{ scope: 'user', version: 'unknown', gitCommitSha: 'e14e8fe2c1fc' }],
+        'noversion@mkt': [{ scope: 'user' }],
+      },
+    }))
+    const x = (await discoverProfiles(h)).find(p => p.dirName === '.claude-x')!
+    expect(x.installedPluginVersions).toEqual({
+      'claude-mem@thedotmack': '13.11.0',              // real version preferred over its sha
+      'context7@claude-plugins-official': 'e14e8fe2c1fc', // 'unknown' resolved to the sha
+    })
+    expect(x.installedPlugins).toContain('noversion@mkt') // installed, but nothing to compare on
+  })
+
+  it('does not report drift between the two spellings of the same sha-pinned install', async () => {
+    // Taken verbatim from a real machine: Claude Code wrote the SHORT sha as `version` in one
+    // profile and the literal 'unknown' in another — same commit, same 40-char gitCommitSha. Both
+    // must collapse to one identity, or doctor cries drift over two identical installs.
+    const SHA = 'e14e8fe2c1fca5912d7389ba7e3a44149d36b5c8'
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-sha-'))
+    for (const [dir, version] of [['.claude-a', 'e14e8fe2c1fc'], ['.claude-b', 'unknown']] as const) {
+      await mkdir(join(h, dir, 'plugins'), { recursive: true })
+      await writeFile(join(h, dir, '.claude.json'), '{}')
+      await writeFile(join(h, dir, 'plugins', 'installed_plugins.json'), JSON.stringify({
+        version: 2, plugins: { 'context7@claude-plugins-official': [{ scope: 'user', version, gitCommitSha: SHA }] },
+      }))
+    }
+    const live = await discoverProfiles(h)
+    expect(live.map(p => p.installedPluginVersions['context7@claude-plugins-official'])).toEqual([SHA, SHA])
+  })
+
+  it('keeps a real release version rather than its sha', async () => {
+    // the guard above must not swallow '13.11.0' just because a gitCommitSha sits next to it
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-rel-'))
+    await mkdir(join(h, '.claude-a', 'plugins'), { recursive: true })
+    await writeFile(join(h, '.claude-a', '.claude.json'), '{}')
+    await writeFile(join(h, '.claude-a', 'plugins', 'installed_plugins.json'), JSON.stringify({
+      version: 2, plugins: { 'claude-mem@thedotmack': [{ scope: 'user', version: '13.11.0', gitCommitSha: 'f5633c1f84181673896c038cbe285131c6d669a3' }] },
+    }))
+    const x = (await discoverProfiles(h)).find(p => p.dirName === '.claude-a')!
+    expect(x.installedPluginVersions['claude-mem@thedotmack']).toBe('13.11.0')
+  })
+  it('installedPluginVersions is empty when installed_plugins.json is absent', async () => {
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-nover-'))
+    await mkdir(join(h, '.claude-x'), { recursive: true })
+    await writeFile(join(h, '.claude-x', '.claude.json'), '{}')
+    const live = await discoverProfiles(h)
+    expect(live.find(p => p.dirName === '.claude-x')!.installedPluginVersions).toEqual({})
+  })
   it('installedPlugins is empty when installed_plugins.json is absent', async () => {
     const h = await mkdtemp(join(tmpdir(), 'ccp-disc-noinst-'))
     await mkdir(join(h, '.claude-x'), { recursive: true })

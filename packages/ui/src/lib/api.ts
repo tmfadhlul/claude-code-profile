@@ -44,6 +44,7 @@ export const api = {
   status: () => req('GET', '/api/status'),
   apply: () => req('POST', '/api/apply'),
   doctor: () => req('GET', '/api/doctor'),
+  fix: () => req('POST', '/api/fix'),
   sessions: () => req('GET', '/api/sessions'),
   sessionTranscript: (agent: 'claude' | 'codex', scope: string, id: string) =>
     req('GET', `/api/sessions/${agent}/${encodeURIComponent(scope)}/${encodeURIComponent(id)}`),

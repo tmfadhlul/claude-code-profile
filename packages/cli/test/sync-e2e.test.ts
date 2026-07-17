@@ -104,6 +104,7 @@ describe('cross-device sync', () => {
         marketplaceAdd: async (_d: string, src: string) => { calls.push(`add ${src}`) },
         install: async (_d: string, id: string) => { calls.push(`install ${id}`) },
         uninstall: async (_d: string, id: string) => { calls.push(`uninstall ${id}`) },
+        update: async (_d: string, id: string) => { calls.push(`update ${id}`) },
       },
     }
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {})

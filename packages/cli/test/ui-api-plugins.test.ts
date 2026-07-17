@@ -12,6 +12,7 @@ function fake(): PluginRunner {
     marketplaceAdd: async (_d, s) => { calls.push(`add ${s}`) },
     install: async (_d, id) => { calls.push(`install ${id}`) },
     uninstall: async (_d, id) => { calls.push(`uninstall ${id}`) },
+    update: async (_d, id) => { calls.push(`update ${id}`) },
   }
 }
 beforeEach(async () => {
@@ -75,6 +76,32 @@ describe('ui api: plugins', () => {
     const del = await callApi(ctx, 'DELETE', '/api/plugins/ponytail@ponytail', { targets: ['default'] })
     expect(del._status).toBe(200)
     expect(calls).toContain('uninstall ponytail@ponytail')
+  })
+
+  it('doctor reports plugin drift as fixable, and POST /api/fix updates every holder to latest', async () => {
+    // reproduce the 2026-07-16 incident: the same plugin at two versions across profiles
+    for (const [dir, version] of [['.claude', '13.10.4'], ['.claude-work', '13.11.0']] as const) {
+      await mkdir(join(home, dir, 'plugins'), { recursive: true })
+      await writeFile(join(home, dir, 'plugins', 'installed_plugins.json'),
+        JSON.stringify({ version: 2, plugins: { 'claude-mem@thedotmack': [{ scope: 'user', version }] } }))
+    }
+    const doc = (await callApi(ctx, 'GET', '/api/doctor'))._json
+    expect(doc.fixable).toBe(true)
+    expect(doc.problems.some((p: string) => /claude-mem@thedotmack.*differs across profiles/.test(p))).toBe(true)
+
+    const res = await callApi(ctx, 'POST', '/api/fix')
+    expect(res._status).toBe(200)
+    // both profiles hold the plugin, so both get updated to latest (the one already ahead no-ops)
+    expect(calls.filter(c => c === 'update claude-mem@thedotmack').length).toBe(2)
+    expect(res._json.fixed).toHaveLength(2)
+  })
+
+  it('doctor is not fixable and fix is a no-op when nothing is wrong', async () => {
+    const doc = (await callApi(ctx, 'GET', '/api/doctor'))._json
+    expect(doc.fixable).toBe(false)
+    const res = await callApi(ctx, 'POST', '/api/fix')
+    expect(res._json.fixed).toEqual([])
+    expect(calls).toEqual([])
   })
 
   it('sync copies the plugin set between profiles and rejects a codex target', async () => {

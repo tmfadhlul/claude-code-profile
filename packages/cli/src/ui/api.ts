@@ -2,7 +2,7 @@ import {
   discoverProfiles, buildManifest, saveManifest, executeApply,
   ensureRootGitignore, loadManifest, loadDevices, saveDevices, pairWithServer, fetchRemote, fetchSecrets,
   writeAssets, parseManifest, backupFiles, renderRcBlock, upsertManagedBlock,
-  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, liveProfileName, scanSessions, readSessionTranscript, manifestHasPlaintextSecret, type Manifest,
+  atomicWrite, BEGIN_MARK, END_MARK, assertSafeManifest, preserveSecretRefs, liveProfileName, planPluginVersionDrift, scanSessions, readSessionTranscript, manifestHasPlaintextSecret, type Manifest,
 } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync, mkdirSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { requireManifest, cliVersion, type CliContext } from '../context.js'
 import { secretsStore, migrateRcSecrets, migrateSettingsSecrets, KEY_VARS } from '../commands/secrets.js'
 import { reconcilePlugins } from '../commands/plugins.js'
+import { runAutoFixes } from '../commands/fix.js'
 import { sendJson, readJson, HttpError, type Route } from './http.js'
 import { planActions, planActionsPreflight } from '../plan.js'
 
@@ -237,6 +238,16 @@ export function buildRoutes(ctx: CliContext): Route[] {
           problems.push(`plaintext token ${varName} in manifest for profile "${liveProfileName(lp)}" — run: secrets migrate`)
       }
     }
+    // Cross-profile plugin version drift — mirrors the `doctor` CLI command. Auto-fixable via
+    // POST /api/fix (the "Fix" button), so it feeds `fixable` below.
+    const drift = planPluginVersionDrift(
+      live.filter(l => l.agent === 'claude').map(l => ({ name: liveProfileName(l), versions: l.installedPluginVersions })),
+    )
+    for (const d of drift) {
+      const short = (v: string) => (/^[0-9a-f]{40}$/.test(v) ? v.slice(0, 12) : v)
+      const at = Object.entries(d.byProfile).map(([p, v]) => `${p}=${short(v)}`).join(', ')
+      problems.push(`plugin "${d.id}" differs across profiles (${at}) — risky for plugins with shared global state (claude-mem shares one worker across profiles and will thrash); run: ccprofiles fix`)
+    }
     // Reuse `secrets migrate`'s own detection (dry-run) — see profiles.ts's doctor for why a
     // separate regex here would let this warning and the fix command disagree.
     const migratable = await migrateRcSecrets(ctx, { dryRun: true })
@@ -254,7 +265,13 @@ export function buildRoutes(ctx: CliContext): Route[] {
     const manifestPath = join(ctx.manifestRoot, 'manifest.yaml')
     if (existsSync(manifestPath) && manifestHasPlaintextSecret(readFileSync(manifestPath, 'utf8')))
       problems.push(`plaintext secret in manifest.yaml — its git commit was skipped; run: ccprofiles secrets migrate`)
-    sendJson(res, 200, { problems })
+    // `fixable` drives the doctor UI's Fix button — it must match exactly what runAutoFixes (fix.ts)
+    // actually clears: plugin drift and plaintext rc secrets. Keep the two in step.
+    sendJson(res, 200, { problems, fixable: drift.length > 0 || migratable.length > 0 })
+  })
+
+  add('POST', /^\/api\/fix$/, async (_m, _req, res) => {
+    sendJson(res, 200, await runAutoFixes(ctx))
   })
 
   // ── shell rc ────────────────────────────────────────────────────────────────

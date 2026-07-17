@@ -11,10 +11,10 @@ import { planApply } from '../src/apply.js'
 const p = detectPlatform({ osKind: 'darwin', home: '/Users/x', shell: '/bin/zsh' })
 const live: LiveProfile[] = [
   { agent: 'claude', dirName: '.claude', dir: '/Users/x/.claude', configPath: '/Users/x/.claude.json',
-    account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], marketplaces: {},
+    account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], installedPluginVersions: {}, marketplaces: {},
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] } } },
   { agent: 'claude', dirName: '.claude-oauth', dir: '/Users/x/.claude-oauth', configPath: '/Users/x/.claude-oauth/.claude.json',
-    account: 'a@b.c', links: { skills: '/Users/x/.claude/skills' }, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], marketplaces: {},
+    account: 'a@b.c', links: { skills: '/Users/x/.claude/skills' }, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], installedPluginVersions: {}, marketplaces: {},
     mcpServers: { playwright: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] }, shadcn: { command: 'npx', args: ['shadcn@latest', 'mcp'] } } },
 ]
 
@@ -47,7 +47,7 @@ describe('buildManifest', () => {
     const sharedRoot = join(p.home, '.ccprofiles', 'shared')
     const liveWithPool: LiveProfile[] = [
       { agent: 'claude', dirName: '.claude', dir: '/Users/x/.claude', configPath: '/Users/x/.claude.json',
-        account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], marketplaces: {}, mcpServers: {} },
+        account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], installedPluginVersions: {}, marketplaces: {}, mcpServers: {} },
       { agent: 'claude', dirName: '.claude-work', dir: '/Users/x/.claude-work', configPath: '/Users/x/.claude-work/.claude.json',
         account: 'a@b.c',
         links: {
@@ -56,7 +56,7 @@ describe('buildManifest', () => {
           todos: join(sharedRoot, 'todos'),
           'shell-snapshots': join(sharedRoot, 'shell-snapshots'),
         },
-        settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], marketplaces: {}, mcpServers: {} },
+        settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], installedPluginVersions: {}, marketplaces: {}, mcpServers: {} },
     ]
     const pooled = buildManifest(liveWithPool, p)
     const work = pooled.profiles.find(x => x.name === 'work')!
@@ -77,11 +77,11 @@ describe('buildManifest', () => {
     const sharedRoot = join(p.home, '.ccprofiles', 'shared')
     const liveWithPool: LiveProfile[] = [
       { agent: 'codex', dirName: '.codex', dir: '/Users/x/.codex', configPath: '/Users/x/.codex/config.toml',
-        account: null, links: {}, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], marketplaces: {}, mcpServers: {} },
+        account: null, links: {}, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], installedPluginVersions: {}, marketplaces: {}, mcpServers: {} },
       { agent: 'codex', dirName: '.codex-work', dir: '/Users/x/.codex-work', configPath: '/Users/x/.codex-work/config.toml',
         account: null,
         links: { sessions: join(sharedRoot, 'sessions') },
-        settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], marketplaces: {}, mcpServers: {} },
+        settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], installedPluginVersions: {}, marketplaces: {}, mcpServers: {} },
     ]
     const pooled = buildManifest(liveWithPool, p)
     const work = pooled.profiles.find(x => x.name === 'codex-work')!
@@ -96,7 +96,7 @@ describe('buildManifest', () => {
     const customSharedRoot = '/custom/pool'
     const liveWithCustomPool: LiveProfile[] = [
       { agent: 'claude', dirName: '.claude', dir: '/Users/x/.claude', configPath: '/Users/x/.claude.json',
-        account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], marketplaces: {}, mcpServers: {} },
+        account: 'a@b.c', links: {}, settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], installedPluginVersions: {}, marketplaces: {}, mcpServers: {} },
       { agent: 'claude', dirName: '.claude-work', dir: '/Users/x/.claude-work', configPath: '/Users/x/.claude-work/.claude.json',
         account: 'a@b.c',
         links: {
@@ -104,7 +104,7 @@ describe('buildManifest', () => {
           todos: join(customSharedRoot, 'todos'),
           'shell-snapshots': join(customSharedRoot, 'shell-snapshots'),
         },
-        settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], marketplaces: {}, mcpServers: {} },
+        settingsEnv: {}, enabledPlugins: {}, installedPlugins: [], installedPluginVersions: {}, marketplaces: {}, mcpServers: {} },
     ]
 
     // with the real pool root threaded through, detection matches
@@ -128,7 +128,7 @@ describe('buildManifest', () => {
       { agent: 'claude', dirName: '.claude', dir: '/Users/x/.claude', configPath: '/Users/x/.claude.json',
         account: 'a@b.c', links: {}, settingsEnv: {}, mcpServers: {},
         enabledPlugins: { 'good@known-mkt': true, 'orphan@stale-mkt': true, 'disabled@known-mkt': false },
-        installedPlugins: [],
+        installedPlugins: [], installedPluginVersions: {},
         marketplaces: { 'known-mkt': { source: 'someorg/known-mkt' } } },
     ]
     const m = buildManifest(liveWithPlugins, p)

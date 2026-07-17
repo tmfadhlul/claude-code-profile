@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { discoverProfiles, liveProfileName, buildManifest, saveManifest, loadManifest, preserveSecretRefs, ensureRootGitignore, manifestHasPlaintextSecret } from 'ccprofiles-core'
+import { discoverProfiles, liveProfileName, buildManifest, saveManifest, loadManifest, preserveSecretRefs, ensureRootGitignore, manifestHasPlaintextSecret, planPluginVersionDrift } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync, mkdirSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -63,6 +63,19 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
         if (decl?.settingsEnv[varName] && !decl.settingsEnv[varName].startsWith('secret://'))
           problems.push(`plaintext token ${varName} in manifest for profile "${pname}" — run: secrets migrate`)
       }
+    }
+    // Cross-profile plugin version drift. Harmless for most plugins, but a plugin that keeps
+    // global singleton state OUTSIDE the profile dirs is shared by every profile at once, and two
+    // versions of it will fight over that state. claude-mem is the known case: all profiles share
+    // one ~/.claude-mem worker, so each session decides the other's worker is stale, kills it and
+    // respawns its own — orphaning a child process every cycle until memory runs out.
+    for (const d of planPluginVersionDrift(
+      live.filter(l => l.agent === 'claude').map(l => ({ name: liveProfileName(l), versions: l.installedPluginVersions })),
+    )) {
+      // compare on the full sha, but print it short — six 40-char shas on one line is unreadable
+      const short = (v: string) => (/^[0-9a-f]{40}$/.test(v) ? v.slice(0, 12) : v)
+      const at = Object.entries(d.byProfile).map(([p, v]) => `${p}=${short(v)}`).join(', ')
+      problems.push(`plugin "${d.id}" differs across profiles (${at}) — risky for plugins with shared global state (claude-mem shares one worker across profiles and will thrash); run: ccprofiles plugins apply`)
     }
     // Reuse `secrets migrate`'s OWN detection (dry-run — no writes) rather than a separate,
     // looser regex: a prior loose `/sk-ant-/` substring check here could flag a line that
