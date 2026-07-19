@@ -27,36 +27,37 @@ export interface LiveProfile {
 }
 
 /**
+ * ccprofiles manages a profile's USER-scope plugins. A project-scope install belongs to some project
+ * directory, not to the profile, and `claude plugin update/uninstall` only ever act on user scope —
+ * counting one made those calls fail with `Plugin "x" is not installed at scope user`. Entries
+ * predating the `scope` field are treated as user.
+ */
+function userScopeEntries(entries: unknown): Array<{ version?: unknown; gitCommitSha?: unknown }> {
+  return (Array.isArray(entries) ? entries : [entries])
+    .filter((e: any) => e && (e.scope ?? 'user') === 'user')
+}
+
+/**
  * Pull a comparable installed version out of each entry of installed_plugins.json's `plugins` map.
+ * The value is an ARRAY of install records (one per scope), not an object.
  *
- * Real-world shapes to survive (all four seen on one machine):
- *  - the value is an ARRAY of install records (one per scope: user/project/local), not an object
- *  - a released plugin has a real `version` ('13.11.0') alongside a `gitCommitSha`; the two move
- *    together, so either identifies the code — but the version reads better in a warning
- *  - a plugin pinned by git sha rather than a release has no real version, and Claude Code spells
- *    that inconsistently: the literal 'unknown' in some releases, the SHORT sha in others, for the
- *    very same commit ('unknown' vs 'e14e8fe2c1fc', both with sha 'e14e8fe2c1fca591…')
- *  - so a short-sha `version` must not be compared against a full `gitCommitSha` either — same
- *    commit, different string
- *
- * Hence: use `version` only when it is a real version, i.e. not missing, not 'unknown', and not
- * merely a prefix of the entry's own sha. Otherwise use the full `gitCommitSha`, which is the one
- * canonical spelling every profile agrees on.
- *
- * ponytail: takes the first scope's version when a plugin is installed at several scopes at once.
- * Per-scope drift is a different (rarer) bug than the cross-profile drift this exists to catch;
- * widen to Record<id, Record<scope, version>> if that ever bites.
+ * ONLY a real release `version` counts. `gitCommitSha` looks like a tempting fallback for the
+ * versionless plugins (Claude Code writes `"version": "unknown"` for those) but it is unusable as
+ * an identity, and comparing it produced drift that `fix` could never clear:
+ *  - it is the sha of the whole MARKETPLACE repo, not of the plugin — two profiles whose plugin
+ *    files are byte-identical still hold different shas if they installed at different times
+ *  - Claude Code never refreshes it when `claude plugin update` finds nothing to do, so the stale
+ *    value outlives every update. Seen on a real machine: context7 at 205b6e0b in one profile and
+ *    e14e8fe2 in three others, identical file contents, identical marketplace snapshot, and
+ *    `clp fix` looping forever because update kept (correctly) no-opping.
+ * A versionless plugin therefore contributes no drift signal at all. Detecting nothing beats
+ * detecting noise that has no remedy.
  */
 export function readInstalledPluginVersions(plugins: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [id, entries] of Object.entries(plugins)) {
-    for (const e of Array.isArray(entries) ? entries : [entries]) {
-      const { version, gitCommitSha } = (e ?? {}) as { version?: unknown; gitCommitSha?: unknown }
-      const sha = typeof gitCommitSha === 'string' && gitCommitSha ? gitCommitSha : null
-      const ver = typeof version === 'string' && version && version !== 'unknown' ? version : null
-      const isShaSpelling = !!ver && !!sha && sha.startsWith(ver)
-      const v = ver && !isShaSpelling ? ver : sha ?? ver
-      if (v) { out[id] = v; break }
+    for (const { version } of userScopeEntries(entries)) {
+      if (typeof version === 'string' && version && version !== 'unknown') { out[id] = version; break }
     }
   }
   return out
@@ -118,7 +119,7 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
     if (agent === 'claude') try {
       const ip = JSON.parse(await readFile(join(dir, 'plugins', 'installed_plugins.json'), 'utf8'))
       if (ip && typeof ip.plugins === 'object' && ip.plugins !== null) {
-        installedPlugins.push(...Object.keys(ip.plugins))
+        installedPlugins.push(...Object.entries(ip.plugins).filter(([, v]) => userScopeEntries(v).length).map(([id]) => id))
         installedPluginVersions = readInstalledPluginVersions(ip.plugins)
       }
     } catch { /* no plugins/installed_plugins.json */ }

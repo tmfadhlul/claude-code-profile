@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverProfiles } from '../src/discovery.js'
+import { planPluginVersionDrift } from '../src/plugins.js'
 
 let home: string
 beforeAll(async () => {
@@ -87,7 +88,26 @@ describe('discoverProfiles', () => {
     const x = live.find(p => p.dirName === '.claude-x')!
     expect(x.installedPlugins).toEqual(['ponytail@ponytail'])
   })
-  it('reads installed plugin versions, falling back to the git sha when there is no release', async () => {
+  it('ignores project-scope installs — `claude plugin update` only acts on user scope', async () => {
+    // real incident: a profile held every plugin at scope 'project'; drift-fix then ran
+    // `claude plugin update` there and got `Plugin "context7" is not installed at scope user`.
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-scope-'))
+    await mkdir(join(h, '.claude-x', 'plugins'), { recursive: true })
+    await writeFile(join(h, '.claude-x', '.claude.json'), '{}')
+    await writeFile(join(h, '.claude-x', 'plugins', 'installed_plugins.json'), JSON.stringify({
+      version: 2,
+      plugins: {
+        'proj@mkt': [{ scope: 'project', projectPath: '/tmp/p', version: '1.0.0' }],
+        'both@mkt': [{ scope: 'project', version: '1.0.0' }, { scope: 'user', version: '2.0.0' }],
+        'legacy@mkt': [{ version: '3.0.0' }], // pre-`scope` entry: treated as user
+      },
+    }))
+    const x = (await discoverProfiles(h)).find(p => p.dirName === '.claude-x')!
+    expect(x.installedPlugins).toEqual(['both@mkt', 'legacy@mkt'])
+    expect(x.installedPluginVersions).toEqual({ 'both@mkt': '2.0.0', 'legacy@mkt': '3.0.0' })
+  })
+
+  it('reads installed plugin versions, ignoring versionless plugins entirely', async () => {
     const h = await mkdtemp(join(tmpdir(), 'ccp-disc-ver-'))
     await mkdir(join(h, '.claude-x', 'plugins'), { recursive: true })
     await writeFile(join(h, '.claude-x', '.claude.json'), '{}')
@@ -95,34 +115,31 @@ describe('discoverProfiles', () => {
       version: 2,
       plugins: {
         'claude-mem@thedotmack': [{ scope: 'user', version: '13.11.0', gitCommitSha: 'f5633c1f8418' }],
-        // sha-pinned plugin, 'unknown' spelling — must resolve to the sha, not to 'unknown'
         'context7@claude-plugins-official': [{ scope: 'user', version: 'unknown', gitCommitSha: 'e14e8fe2c1fc' }],
         'noversion@mkt': [{ scope: 'user' }],
       },
     }))
     const x = (await discoverProfiles(h)).find(p => p.dirName === '.claude-x')!
-    expect(x.installedPluginVersions).toEqual({
-      'claude-mem@thedotmack': '13.11.0',              // real version preferred over its sha
-      'context7@claude-plugins-official': 'e14e8fe2c1fc', // 'unknown' resolved to the sha
-    })
-    expect(x.installedPlugins).toContain('noversion@mkt') // installed, but nothing to compare on
+    // only the released plugin is comparable; the sha is NOT a usable identity (see the fn's doc)
+    expect(x.installedPluginVersions).toEqual({ 'claude-mem@thedotmack': '13.11.0' })
+    // both versionless plugins are still installed — just nothing to compare on
+    expect(x.installedPlugins).toEqual(expect.arrayContaining(['context7@claude-plugins-official', 'noversion@mkt']))
   })
 
-  it('does not report drift between the two spellings of the same sha-pinned install', async () => {
-    // Taken verbatim from a real machine: Claude Code wrote the SHORT sha as `version` in one
-    // profile and the literal 'unknown' in another — same commit, same 40-char gitCommitSha. Both
-    // must collapse to one identity, or doctor cries drift over two identical installs.
-    const SHA = 'e14e8fe2c1fca5912d7389ba7e3a44149d36b5c8'
+  it('reports no drift for a versionless plugin whose shas differ across profiles', async () => {
+    // The 2026-07-20 incident: identical context7 files in every profile, but different install-time
+    // marketplace shas. Comparing those shas warned of drift that `clp fix` could never clear —
+    // `claude plugin update` correctly no-ops, so the stale sha never moves.
     const h = await mkdtemp(join(tmpdir(), 'ccp-disc-sha-'))
-    for (const [dir, version] of [['.claude-a', 'e14e8fe2c1fc'], ['.claude-b', 'unknown']] as const) {
+    for (const [dir, sha] of [['.claude-a', '205b6e0b3036'], ['.claude-b', 'e14e8fe2c1fc']] as const) {
       await mkdir(join(h, dir, 'plugins'), { recursive: true })
       await writeFile(join(h, dir, '.claude.json'), '{}')
       await writeFile(join(h, dir, 'plugins', 'installed_plugins.json'), JSON.stringify({
-        version: 2, plugins: { 'context7@claude-plugins-official': [{ scope: 'user', version, gitCommitSha: SHA }] },
+        version: 2, plugins: { 'context7@claude-plugins-official': [{ scope: 'user', version: 'unknown', gitCommitSha: sha }] },
       }))
     }
     const live = await discoverProfiles(h)
-    expect(live.map(p => p.installedPluginVersions['context7@claude-plugins-official'])).toEqual([SHA, SHA])
+    expect(planPluginVersionDrift(live.map(p => ({ name: p.dirName, versions: p.installedPluginVersions })))).toEqual([])
   })
 
   it('keeps a real release version rather than its sha', async () => {
