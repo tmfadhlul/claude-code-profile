@@ -78,6 +78,10 @@ export function buildManifest(
  * re-leak a previously migrated token as plaintext. For each profile that existed before,
  * if the old manifest had a secret:// ref whose resolved value matches the newly-discovered
  * plaintext value, restore the ref instead of the plaintext.
+ *
+ * Also carries forward declared-only fields (skipPermissions, launcher env) that live
+ * state cannot represent — buildManifest resets them to defaults, so without this every
+ * snapshot/adopt would silently turn them off.
  */
 export async function preserveSecretRefs(
   newM: Manifest,
@@ -87,6 +91,8 @@ export async function preserveSecretRefs(
   for (const pr of newM.profiles) {
     const old = oldM.profiles.find(p => p.name === pr.name)
     if (!old) continue
+    pr.skipPermissions = old.skipPermissions
+    if (Object.keys(pr.env).length === 0) pr.env = old.env
     for (const [k, v] of Object.entries(old.settingsEnv ?? {})) {
       if (!v.startsWith('secret://')) continue
       const resolved = await getSecret(v.slice('secret://'.length))

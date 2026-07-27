@@ -168,6 +168,22 @@ describe('preserveSecretRefs', () => {
     expect(newM.profiles[0].settingsEnv.ANTHROPIC_AUTH_TOKEN).toBe('plain-tok-1')
   })
 
+  it('carries forward skipPermissions from the old manifest', async () => {
+    const oldM = manifestWith({})
+    oldM.profiles[0].skipPermissions = true
+    const newM = manifestWith({})
+    await preserveSecretRefs(newM, oldM, async () => null)
+    expect(newM.profiles[0].skipPermissions).toBe(true)
+  })
+
+  it('carries forward launcher env the rebuild cannot discover', async () => {
+    const oldM = manifestWith({})
+    oldM.profiles[0].env = { ANTHROPIC_BASE_URL: 'https://proxy.example' }
+    const newM = manifestWith({})
+    await preserveSecretRefs(newM, oldM, async () => null)
+    expect(newM.profiles[0].env).toEqual({ ANTHROPIC_BASE_URL: 'https://proxy.example' })
+  })
+
   it('ignores profiles that did not exist in the old manifest', async () => {
     const oldM = manifestWith({})
     oldM.profiles = []
