@@ -1,5 +1,6 @@
-import { cp, lstat, mkdir, readlink, unlink } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readlink, rm, unlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 export interface PluginRunner {
   marketplaceAdd(configDir: string, source: string): Promise<void>
@@ -91,6 +92,65 @@ export async function reconcileProfilePlugins(opts: {
   }
   for (const id of update) { await opts.runner.update(opts.configDir, id); log.push(`update ${id}`) }
   return log
+}
+
+/**
+ * Existing claude-mem cache dirs under a profile (`plugins/cache/<owner>/claude-mem`, any owner).
+ * Disk is the ground truth on purpose: a PROJECT-scope claude-mem install is invisible to
+ * installed_plugins.json's user-scope view (discovery's installedPlugins misses it), yet it still
+ * leaks the same way — `.claude-staffinc` was exactly this case on 2026-07-23. Gating the prune on
+ * install bookkeeping would skip the one profile that needed it most.
+ */
+export async function claudeMemCacheDirs(configDir: string): Promise<string[]> {
+  const cacheRoot = join(configDir, 'plugins', 'cache')
+  let owners: string[]
+  try { owners = await readdir(cacheRoot) } catch { return [] }
+  const out: string[] = []
+  for (const owner of owners) {
+    const d = join(cacheRoot, owner, 'claude-mem')
+    if (existsSync(d)) out.push(d)
+  }
+  return out
+}
+
+/** Compare dotted numeric version names ("13.9.2" < "13.11.0"). Missing parts count as 0. */
+function compareVersionDir(a: string, b: string): number {
+  const pa = a.split('.'), pb = b.split('.')
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = Number(pa[i] ?? 0), y = Number(pb[i] ?? 0)
+    if (x !== y) return x - y
+  }
+  return 0
+}
+
+/**
+ * Keep only the highest-semver version dir under `cacheDir`, delete the rest. Returns removed names.
+ *
+ * Why this is the real fix for the claude-mem leak: the plugin's session-init hook resolves which
+ * worker to launch with `ls -dt <cache>/[0-9]*` — the newest dir by MTIME — and ignores the pinned
+ * version in installed_plugins.json entirely. So a leftover OLD version dir with a fresher mtime is
+ * launched instead of the pinned latest, reviving the shared-`~/.claude-mem`-worker fight even when
+ * every profile's pin is already correct. On 2026-07-23 this ran `.claude-data-plb` (pinned 13.12.1)
+ * up to 187 procs / 20GB swap, all from a stale 13.11.0 dir. Version *parity* (planPluginVersionDrift
+ * + `clp fix`) is necessary but not sufficient; the ambiguity only goes away when one dir remains.
+ *
+ * "Keep highest semver" == keep the intended active version, because `claude plugin update` only ever
+ * moves to the marketplace's latest — there is no way to pin an older one. Non-numeric dirs
+ * (git-sha/"unknown" caches of versionless plugins) are left untouched.
+ */
+export async function pruneStaleVersionDirs(cacheDir: string): Promise<string[]> {
+  let names: string[]
+  try { names = await readdir(cacheDir) } catch { return [] }
+  const versions = names.filter(n => /^\d/.test(n)).sort(compareVersionDir)
+  if (versions.length <= 1) return []
+  const keep = versions[versions.length - 1]
+  const removed: string[] = []
+  for (const v of versions) {
+    if (v === keep) continue
+    await rm(join(cacheDir, v), { recursive: true, force: true })
+    removed.push(v)
+  }
+  return removed
 }
 
 /** If a profile's plugins/ is a legacy symlink into the old shared pool, restore it to a real dir. */

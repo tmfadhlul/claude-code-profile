@@ -1,7 +1,7 @@
 import type { Command } from 'commander'
 import {
   discoverProfiles, liveProfileName, saveManifest, reconcileProfilePlugins, restoreLegacyPluginSymlink,
-  planPluginVersionDrift, renderPath, type PluginRunner, type Manifest,
+  planPluginVersionDrift, claudeMemCacheDirs, pruneStaleVersionDirs, renderPath, type PluginRunner, type Manifest,
 } from 'ccprofiles-core'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
@@ -70,6 +70,26 @@ export async function reconcilePlugins(ctx: CliContext, m: Manifest, names: stri
   return log
 }
 
+/**
+ * Delete stale claude-mem cache version dirs in every claude profile, keeping only the latest.
+ * This is what actually stops the shared-worker leak: the hook launches by newest MTIME, not by the
+ * pinned version, so a leftover old dir revives the fight (see pruneStaleVersionDirs). Safe to run
+ * anytime — no network, only removes superseded copies. Scoped to claude-mem, the one plugin with
+ * shared `~/.claude-mem` singleton state; other plugins keep their old caches for rollback.
+ */
+export async function prunePluginCaches(ctx: CliContext): Promise<string[]> {
+  const live = await discoverProfiles(ctx.home)
+  const log: string[] = []
+  for (const lp of live) {
+    if (lp.agent !== 'claude') continue
+    for (const cache of await claudeMemCacheDirs(lp.dir)) {
+      const removed = await pruneStaleVersionDirs(cache)
+      if (removed.length) log.push(`${liveProfileName(lp)}: pruned stale claude-mem cache — ${removed.join(', ')}`)
+    }
+  }
+  return log
+}
+
 export function registerPluginCommands(program: Command, ctx: CliContext): void {
   const plugins = program.command('plugins').description('manage Claude Code plugins across profiles')
 
@@ -122,6 +142,15 @@ export function registerPluginCommands(program: Command, ctx: CliContext): void 
       if (!m.profiles.some(p => p.plugins.includes(id))) { const at = id.lastIndexOf('@'); const mkt = at > 0 ? id.slice(at + 1) : ''; if (mkt && !m.profiles.some(p => p.plugins.some(x => x.endsWith(`@${mkt}`)))) delete m.marketplaces[mkt] }
       await saveManifest(ctx.manifestRoot, m)
       await reconcile(m, names)
+    })
+
+  plugins.command('prune')
+    .description('delete stale claude-mem cache version dirs (keep latest) — stops the shared-worker mtime leak')
+    .action(async () => {
+      const log = await prunePluginCaches(ctx)
+      if (!log.length) { console.log('plugins prune: nothing stale — every profile already has one claude-mem version'); return }
+      for (const line of log) console.log(line)
+      console.log(`plugins prune: cleaned ${log.length} profile(s)`)
     })
 
   plugins.command('sync')

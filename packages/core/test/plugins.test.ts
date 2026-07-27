@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, symlink, lstat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { planPluginReconcile, planPluginVersionDrift, marketplaceOf, reconcileProfilePlugins, restoreLegacyPluginSymlink, type PluginRunner } from '../src/plugins.js'
+import { planPluginReconcile, planPluginVersionDrift, marketplaceOf, claudeMemCacheDirs, pruneStaleVersionDirs, reconcileProfilePlugins, restoreLegacyPluginSymlink, type PluginRunner } from '../src/plugins.js'
 
 describe('planPluginReconcile', () => {
   it('diffs desired vs current', () => {
@@ -63,6 +63,51 @@ describe('marketplaceOf', () => {
   it('takes the part after the last @', () => {
     expect(marketplaceOf('claude-mem@thedotmack')).toBe('thedotmack')
     expect(marketplaceOf('bare')).toBeNull()
+  })
+})
+
+describe('claudeMemCacheDirs', () => {
+  it('finds claude-mem cache dirs on disk regardless of install scope (project-scope is invisible to installed_plugins.json)', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-cmc-'))
+    await mkdir(join(home, 'plugins', 'cache', 'thedotmack', 'claude-mem', '13.12.1'), { recursive: true })
+    await mkdir(join(home, 'plugins', 'cache', 'other', 'something'), { recursive: true })
+    expect(await claudeMemCacheDirs(home)).toEqual([join(home, 'plugins', 'cache', 'thedotmack', 'claude-mem')])
+  })
+  it('returns [] when the profile has no plugin cache', async () => {
+    expect(await claudeMemCacheDirs(join(tmpdir(), 'ccp-none-xyz'))).toEqual([])
+  })
+})
+
+describe('pruneStaleVersionDirs', () => {
+  let cache: string
+  const mk = async (...versions: string[]) => {
+    cache = await mkdtemp(join(tmpdir(), 'ccp-prune-'))
+    for (const v of versions) await mkdir(join(cache, v), { recursive: true })
+  }
+
+  it('keeps only the highest semver and deletes the rest (13.11.0 does NOT out-rank 13.12.1)', async () => {
+    // the exact 2026-07-23 shape: a stale 13.11.0 dir alongside the pinned 13.12.1
+    await mk('13.6.2', '13.9.2', '13.11.0', '13.12.1')
+    const removed = await pruneStaleVersionDirs(cache)
+    expect(removed.sort()).toEqual(['13.11.0', '13.6.2', '13.9.2'])
+    expect(existsSync(join(cache, '13.12.1'))).toBe(true)
+    expect(existsSync(join(cache, '13.11.0'))).toBe(false)
+  })
+
+  it('no-ops when a single version is present', async () => {
+    await mk('13.12.1')
+    expect(await pruneStaleVersionDirs(cache)).toEqual([])
+    expect(existsSync(join(cache, '13.12.1'))).toBe(true)
+  })
+
+  it('leaves non-numeric (git-sha/"unknown") dirs untouched', async () => {
+    await mk('unknown', '58578a456a83')
+    expect(await pruneStaleVersionDirs(cache)).toEqual([])
+    expect(existsSync(join(cache, 'unknown'))).toBe(true)
+  })
+
+  it('returns [] for a missing cache dir', async () => {
+    expect(await pruneStaleVersionDirs(join(tmpdir(), 'ccp-does-not-exist-xyz'))).toEqual([])
   })
 })
 

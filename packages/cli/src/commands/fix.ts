@@ -1,7 +1,7 @@
 import type { Command } from 'commander'
 import { discoverProfiles, liveProfileName, planPluginVersionDrift } from 'ccprofiles-core'
 import type { CliContext } from '../context.js'
-import { claudeRunner } from './plugins.js'
+import { claudeRunner, prunePluginCaches } from './plugins.js'
 import { migrateRcSecrets } from './secrets.js'
 
 /**
@@ -35,6 +35,12 @@ export async function runAutoFixes(ctx: CliContext): Promise<{ fixed: string[] }
       }
     }
   }
+
+  // Version parity (above) is not enough: claude-mem's hook launches by newest cache-dir MTIME, not
+  // by the pin, so a leftover old version dir still gets run and revives the shared-worker leak.
+  // Prune every profile down to one claude-mem version. Runs after the drift update so a freshly
+  // installed latest is the survivor.
+  for (const line of await prunePluginCaches(ctx)) fixed.push(line)
 
   for (const secret of await migrateRcSecrets(ctx, {})) fixed.push(`migrated plaintext secret ${secret} → keychain`)
 
