@@ -1,10 +1,41 @@
 import type { Command } from 'commander'
-import { buildDelegateLaunch, renderPath } from 'ccprofiles-core'
+import { buildDelegateLaunch, renderPath, scopeReport } from 'ccprofiles-core'
 import { spawnSync } from 'node:child_process'
 import { requireManifest, type CliContext } from '../context.js'
 import { secretsStore } from './secrets.js'
 
 const SECRET_PREFIX = 'secret://'
+
+/**
+ * Fingerprint every file git reports as changed, so we can tell afterwards which ones the
+ * delegate touched. Fingerprint is `status:blobhash`, so a further edit to an already-dirty
+ * file is caught — a bare path set would miss it.
+ * ponytail: one `git hash-object` per dirty file. Fine for a normal working tree; if someone
+ * delegates against thousands of dirty files, batch it through `git hash-object --stdin-paths`.
+ *
+ * LIMITATION — this attributes every change in the tree to the delegate we just ran, because a
+ * snapshot diff cannot tell writers apart. That is exact for one delegate at a time, and wrong
+ * for concurrent delegates sharing a tree: each one's "after" contains the others' work, so
+ * they report each other's files as violations. Parallel runs need real isolation (a worktree
+ * per delegate), not a better diff.
+ */
+function snapshotChanges(cwd: string): Map<string, string> | null {
+  // -uall: without it git collapses a new directory to `src/web/`, so a scope check sees one
+  // opaque entry instead of the files inside it
+  const res = spawnSync('git', ['status', '--porcelain', '-z', '-uall'], { cwd, encoding: 'utf8' })
+  if (res.status !== 0) return null // not a git repo (or git missing)
+  const out = new Map<string, string>()
+  for (const entry of res.stdout.split('\0')) {
+    if (!entry.trim()) continue
+    const status = entry.slice(0, 2).trim()
+    const file = entry.slice(3)
+    if (!file) continue
+    const st = spawnSync('git', ['--no-optional-locks', 'hash-object', '--', file],
+      { cwd, encoding: 'utf8' })
+    out.set(file, `${status}:${st.status === 0 ? st.stdout.trim() : 'missing'}`)
+  }
+  return out
+}
 
 async function resolveEnv(ctx: CliContext, env: Record<string, string>): Promise<Record<string, string>> {
   let store: Awaited<ReturnType<typeof secretsStore>> | null = null
@@ -28,10 +59,12 @@ export function registerDelegateCommands(program: Command, ctx: CliContext): voi
     .option('--cwd <dir>', 'working directory for the delegate (default: current directory)')
     .option('--json', 'return structured JSON instead of text (claude profiles only)')
     .option('--skip-permissions', 'let the delegate write files without prompting (headless cannot prompt)')
+    .option('--scope <glob>', 'declare a path lane; report files touched outside it. One delegate at a time — see --help notes (repeatable)', (v: string, acc: string[]) => [...acc, v], [] as string[])
     .option('--print', 'print the launch command instead of running it')
     .argument('[prompt...]', 'the task; if omitted, read from stdin')
     .action(async (promptWords: string[], opts: {
-      to: string; model?: string; cwd?: string; json?: boolean; skipPermissions?: boolean; print?: boolean
+      to: string; model?: string; cwd?: string; json?: boolean; skipPermissions?: boolean
+      print?: boolean; scope: string[]
     }) => {
       const m = await requireManifest(ctx)
       const target = m.profiles.find(p => p.name === opts.to)
@@ -73,9 +106,29 @@ export function registerDelegateCommands(program: Command, ctx: CliContext): voi
         return
       }
 
+      const scopes = opts.scope ?? []
+      const before = scopes.length ? snapshotChanges(launch.cwd) : null
+      if (scopes.length && !before) {
+        throw new Error(`--scope needs a git repo — ${launch.cwd} is not one (or git is unavailable)`)
+      }
+
       const res = spawnSync(launch.command, launch.args, { stdio: 'inherit', cwd: launch.cwd, env: launch.env })
       if (res.error) throw res.error
       if (typeof res.status === 'number' && res.status !== 0) process.exitCode = res.status
+
+      if (before) {
+        const after = snapshotChanges(launch.cwd)
+        const { touched, violations } = scopeReport(before, after ?? before, scopes)
+        console.error(`\ndelegate "${target.name}" touched ${touched.length} file(s)`)
+        for (const f of touched) console.error(`  ${violations.includes(f) ? '✗' : ' '} ${f}`)
+        if (violations.length) {
+          // Nothing is reverted — the work stands. The non-zero exit is so a chained
+          // `&& git merge` stops rather than folding in an out-of-lane change unseen.
+          console.error(`\n${violations.length} file(s) outside scope [${scopes.join(', ')}] `
+            + '— review before merging or before trusting a parallel run')
+          process.exitCode = 3
+        }
+      }
     })
 }
 
