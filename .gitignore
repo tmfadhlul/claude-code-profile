@@ -12,3 +12,9 @@ dist/
 
 # playwright-mcp scratch output
 .playwright-mcp/
+
+# local-only: agent instructions, hooks, and planning docs — not for distribution
+/CLAUDE.md
+/AGENTS.md
+/.claude/settings.json
+/docs/superpowers/
