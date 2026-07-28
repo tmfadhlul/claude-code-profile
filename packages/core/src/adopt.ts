@@ -84,9 +84,9 @@ export function buildManifest(
  * if the old manifest had a secret:// ref whose resolved value matches the newly-discovered
  * plaintext value, restore the ref instead of the plaintext.
  *
- * Also carries forward declared-only fields (skipPermissions, launcher env) that live
- * state cannot represent — buildManifest resets them to defaults, so without this every
- * snapshot/adopt would silently turn them off.
+ * Also carries forward declared-only fields (skipPermissions, launcher name, launcher env)
+ * that live state cannot represent — buildManifest resets them to defaults, so without this
+ * every snapshot/adopt would silently turn them off.
  */
 export async function preserveSecretRefs(
   newM: Manifest,
@@ -97,6 +97,9 @@ export async function preserveSecretRefs(
     const old = oldM.profiles.find(p => p.name === pr.name)
     if (!old) continue
     pr.skipPermissions = old.skipPermissions
+    // buildManifest derives `cl-<dirname>`, which silently renames a hand-picked alias
+    // (cl-plb -> cl-data-plb) and makes the next apply rewrite the user's rc block.
+    pr.launcher = old.launcher
     if (Object.keys(pr.env).length === 0) pr.env = old.env
     for (const [k, v] of Object.entries(old.settingsEnv ?? {})) {
       if (!v.startsWith('secret://')) continue

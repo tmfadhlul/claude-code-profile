@@ -168,6 +168,17 @@ describe('preserveSecretRefs', () => {
     expect(newM.profiles[0].settingsEnv.ANTHROPIC_AUTH_TOKEN).toBe('plain-tok-1')
   })
 
+  it('carries forward a hand-picked launcher alias instead of the derived cl-<dirname>', async () => {
+    // buildManifest derives cl-data-plb from the dir name; a snapshot must not rename the
+    // user's cl-plb, or the next apply rewrites their rc block out from under them.
+    const oldM = manifestWith({})
+    oldM.profiles[0].launcher = 'cl-plb'
+    const newM = manifestWith({})
+    newM.profiles[0].launcher = 'cl-data-plb'
+    await preserveSecretRefs(newM, oldM, async () => null)
+    expect(newM.profiles[0].launcher).toBe('cl-plb')
+  })
+
   it('carries forward skipPermissions from the old manifest', async () => {
     const oldM = manifestWith({})
     oldM.profiles[0].skipPermissions = true
