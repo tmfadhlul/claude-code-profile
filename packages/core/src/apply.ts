@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, readFile, rm, symlink, unlink } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, rm, stat, symlink, unlink } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, dirname, posix as posixPath, win32 as win32Path } from 'node:path'
 import type { Manifest, McpServerDef } from './manifest.js'
@@ -15,6 +15,7 @@ export type ApplyAction =
   | { kind: 'link'; from: string; to: string }
   | { kind: 'rc-block'; rcFile: string; block: string }
   | { kind: 'set-settings-env'; settingsPath: string; env: Record<string, string> }
+  | { kind: 'set-status-line'; settingsPath: string; statusLine: Record<string, unknown> }
   | { kind: 'share-session-dir'; from: string; to: string }
   | { kind: 'unshare-session-dir'; from: string; to: string }
 
@@ -145,6 +146,15 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
         actions.push({ kind: 'set-settings-env', settingsPath: join(dir, 'settings.json'), env: desired })
       }
     }
+
+    // Same normalization as the mcp check — comparing raw JSON would re-emit this action on
+    // every apply whenever key order differed, which is the unfixable-drift-loop shape.
+    if (agent === 'claude' && m.statusLine) {
+      const currentSl = lp?.statusLine ?? null
+      if (!currentSl || JSON.stringify(sortKeys(currentSl)) !== JSON.stringify(sortKeys(m.statusLine))) {
+        actions.push({ kind: 'set-status-line', settingsPath: join(dir, 'settings.json'), statusLine: m.statusLine })
+      }
+    }
   }
 
   const block = renderRcBlock(m, p)
@@ -166,6 +176,7 @@ export async function executeApply(
     a.kind === 'set-mcp-servers' ? [a.configPath]
     : a.kind === 'rc-block' ? [a.rcFile]
     : a.kind === 'set-settings-env' ? [a.settingsPath]
+    : a.kind === 'set-status-line' ? [a.settingsPath]
     : [])
   let backupDir = touched.length ? await backupFiles(touched, opts.backupRoot, opts.stamp) : null
 
@@ -228,6 +239,23 @@ export async function executeApply(
       await mkdir(dirname(a.settingsPath), { recursive: true })
       // Resolved secret:// refs land here as plaintext env values — keep it 0600.
       await atomicWrite(a.settingsPath, JSON.stringify(cfg, null, 2), { mode: 0o600 })
+    } else if (a.kind === 'set-status-line') {
+      let cfg: Record<string, unknown> = {}
+      try { cfg = JSON.parse(await readFile(a.settingsPath, 'utf8')) }
+      catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+          await backupFiles([a.settingsPath], opts.backupRoot, opts.stamp)
+          throw new Error(`refusing to overwrite unreadable ${a.settingsPath} — back it up and fix it, then re-apply (${(e as Error).message})`)
+        }
+        // ENOENT: genuinely new file, cfg stays {}
+      }
+      cfg.statusLine = a.statusLine
+      // Preserve the existing mode. set-settings-env may have just written this same file at
+      // 0600 because it holds resolved secrets; atomicWrite's 0644 default would widen it.
+      let mode = 0o644
+      try { mode = (await stat(a.settingsPath)).mode & 0o777 } catch { /* new file: 0644 */ }
+      await mkdir(dirname(a.settingsPath), { recursive: true })
+      await atomicWrite(a.settingsPath, JSON.stringify(cfg, null, 2), { mode })
     } else if (a.kind === 'share-session-dir') {
       await mkdir(a.to, { recursive: true })
       let st: Awaited<ReturnType<typeof lstat>> | null = null
@@ -258,6 +286,7 @@ function describe(a: ApplyAction): string {
     case 'link': return `link ${a.from} -> ${a.to}`
     case 'rc-block': return `update managed block in ${a.rcFile}`
     case 'set-settings-env': return `set settings env (${Object.keys(a.env).length}) in ${a.settingsPath}`
+    case 'set-status-line': return `set statusLine in ${a.settingsPath}`
     case 'share-session-dir': return `share ${a.from} -> ${a.to}`
     case 'unshare-session-dir': return `unshare ${a.from} (seed from ${a.to})`
   }

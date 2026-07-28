@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { planApply, executeApply, resolveSettingsEnv, isWithin } from '../src/apply.js'
 import { discoverProfiles } from '../src/discovery.js'
 import { detectPlatform } from '../src/platform.js'
+import { buildManifest } from '../src/adopt.js'
 import type { Manifest } from '../src/manifest.js'
 
 let home: string
@@ -376,5 +377,53 @@ describe('shared sessions', () => {
       { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 'codex-unshare' })
     expect((await lstat(join(dir, 'sessions'))).isSymbolicLink()).toBe(false)
     expect(existsSync(join(dir, 'sessions', '2026', '07', '10', 'rollout-test.jsonl'))).toBe(true)
+  })
+})
+
+describe('statusLine sync', () => {
+  const SL = { type: 'command', command: 'ccstatusline', padding: 0, refreshInterval: 10 }
+
+  it('mirrors the manifest statusLine into every claude profile that lacks it', async () => {
+    const m = { ...manifest(), statusLine: SL }
+    const actions = await planApply(m, await discoverProfiles(home), detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' }))
+    const sl = actions.filter(a => a.kind === 'set-status-line')
+    expect(sl.map(a => (a as any).settingsPath.replace(home, '~'))).toEqual([
+      join('~', '.claude', 'settings.json'), join('~', '.claude-new', 'settings.json'),
+    ])
+  })
+
+  it('converges — a profile already holding the statusLine plans no action, whatever the key order', async () => {
+    // Re-emitting on key-order difference alone is the unfixable-drift-loop shape that
+    // planPluginVersionDrift hit; normalize before comparing.
+    await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({
+      statusLine: { refreshInterval: 10, padding: 0, command: 'ccstatusline', type: 'command' },
+    }))
+    const m = { ...manifest(), statusLine: SL }
+    const actions = await planApply(m, await discoverProfiles(home), detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' }))
+    expect(actions.filter(a => a.kind === 'set-status-line'
+      && (a as any).settingsPath === join(home, '.claude', 'settings.json'))).toEqual([])
+  })
+
+  it('writes statusLine without clobbering other settings keys or widening 0600', async () => {
+    const p = join(home, '.claude', 'settings.json')
+    await writeFile(p, JSON.stringify({ env: { A: '1' }, enabledPlugins: { x: true } }), { mode: 0o600 })
+    await executeApply([{ kind: 'set-status-line', settingsPath: p, statusLine: SL }],
+      { backupRoot: join(home, '.ccprofiles', 'backups'), stamp: 'sl' })
+    expect(JSON.parse(await readFile(p, 'utf8'))).toEqual({
+      env: { A: '1' }, enabledPlugins: { x: true }, statusLine: SL,
+    })
+    expect(statSync(p).mode & 0o777).toBe(0o600)
+  })
+
+  it('adopt round-trips: manifest built from live state plans no statusLine change', async () => {
+    await writeFile(join(home, '.claude', 'settings.json'), JSON.stringify({ statusLine: SL }))
+    await mkdir(join(home, '.claude-new'), { recursive: true })
+    await writeFile(join(home, '.claude-new', '.claude.json'), JSON.stringify({ mcpServers: {} }))
+    await writeFile(join(home, '.claude-new', 'settings.json'), JSON.stringify({ statusLine: SL }))
+    const live = await discoverProfiles(home)
+    const built = buildManifest(live, detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' }))
+    expect(built.statusLine).toEqual(SL)
+    const actions = await planApply(built, live, detectPlatform({ osKind: process.platform as any, home, shell: '/bin/zsh' }))
+    expect(actions.filter(a => a.kind === 'set-status-line')).toEqual([])
   })
 })

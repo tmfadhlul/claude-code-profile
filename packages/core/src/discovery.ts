@@ -14,6 +14,9 @@ export interface LiveProfile {
   mcpServers: Record<string, McpServerDef>
   links: Record<string, string>
   settingsEnv: Record<string, string>
+  /** settings.json `statusLine`, verbatim. Claude Code reads it from the profile's own
+   *  settings.json, so configuring it once in ~/.claude leaves every other profile bare. */
+  statusLine?: unknown
   enabledPlugins: Record<string, boolean>
   /** Plugin ids actually installed (keys of plugins/installed_plugins.json) — the ground truth
    *  for "present". enabledPlugins alone can be stale: an enabled-but-never-installed entry
@@ -99,12 +102,14 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
     }
     const settingsEnv: Record<string, string> = {}
     const enabledPlugins: Record<string, boolean> = {}
+    let statusLine: unknown
     if (agent === 'claude') try {
       const s = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8'))
       if (s && typeof s.env === 'object' && s.env !== null)
         for (const [k, v] of Object.entries(s.env)) if (typeof v === 'string') settingsEnv[k] = v
       if (s && typeof s.enabledPlugins === 'object' && s.enabledPlugins !== null)
         for (const [k, v] of Object.entries(s.enabledPlugins)) if (typeof v === 'boolean') enabledPlugins[k] = v
+      if (s && typeof s.statusLine === 'object' && s.statusLine !== null) statusLine = s.statusLine
     } catch { /* no settings.json */ }
     const marketplaces: Record<string, { source: string }> = {}
     if (agent === 'claude') try {
@@ -133,6 +138,7 @@ export async function discoverProfiles(home: string): Promise<LiveProfile[]> {
       mcpServers: agent === 'claude' ? cfg?.mcpServers ?? {} : await readCodexMcpServers(configPath),
       links,
       settingsEnv,
+      statusLine,
       enabledPlugins,
       installedPlugins,
       installedPluginVersions,

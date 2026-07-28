@@ -43,6 +43,11 @@ const ManifestSchema = z.object({
   profiles: z.array(ProfileSchema),
   mcpServers: z.record(McpServerSchema),
   marketplaces: z.record(MarketplaceSchema).default({}),
+  /** One settings.json `statusLine` block mirrored into every claude profile. Claude Code
+   *  reads it per-CLAUDE_CONFIG_DIR, so without this a statusline configured in one profile
+   *  is simply absent in the others. Shared, not per-profile: the point is that every
+   *  profile gets the same line (it renders per-profile data at runtime). */
+  statusLine: z.record(z.unknown()).optional(),
 })
 
 export type McpServerDef = z.infer<typeof McpServerSchema>

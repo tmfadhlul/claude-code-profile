@@ -69,7 +69,12 @@ export function buildManifest(
     }
   })
 
-  return { version: 1, hub, profiles, mcpServers, marketplaces }
+  // Whichever profile already has a statusline wins; ~/.claude first, since that is where a
+  // `ccstatusline`-style installer writes when run without CLAUDE_CONFIG_DIR set.
+  const statusLine = (live.find(lp => lp.dirName === '.claude' && lp.statusLine) ?? live.find(lp => lp.statusLine))
+    ?.statusLine as Manifest['statusLine']
+
+  return { version: 1, hub, profiles, mcpServers, marketplaces, ...(statusLine ? { statusLine } : {}) }
 }
 
 /**
