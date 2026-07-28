@@ -14,12 +14,29 @@ export const PROVIDER_ENV_KEYS = [
   'CODEX_HOME',
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',
+  // a direct auth override — left in place, the delegate authenticates as the *parent* account
+  'CLAUDE_CODE_OAUTH_TOKEN',
   'ANTHROPIC_BASE_URL',
+  // gateways route and bill on these, so they re-point a delegate as surely as a base URL
+  'ANTHROPIC_CUSTOM_HEADERS',
   'ANTHROPIC_MODEL',
   'ANTHROPIC_SMALL_FAST_MODEL',
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  // alternate backends: these switch the provider wholesale, ignoring ANTHROPIC_BASE_URL
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
+  'CLAUDE_CODE_SKIP_VERTEX_AUTH',
+  'AWS_BEARER_TOKEN_BEDROCK',
+  'ANTHROPIC_BEDROCK_BASE_URL',
+  'ANTHROPIC_VERTEX_BASE_URL',
+  'ANTHROPIC_VERTEX_PROJECT_ID',
+  'CLOUD_ML_REGION',
+  // codex targets pin on the OpenAI pair, the exact mirror of the Anthropic leak
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
 ] as const
 
 export interface DelegateLaunch {
@@ -76,7 +93,9 @@ export function buildDelegateLaunch(opts: {
   }
   // codex resolves its workspace from --cd, not the spawn cwd
   if (codex) args.push('-C', opts.cwd)
-  args.push(opts.prompt)
+  // `--` or a prompt like "-fix the tests" is parsed as an option by the child and the whole
+  // delegation fails. Both `claude` (commander) and `codex exec` (clap) honour the separator.
+  args.push('--', opts.prompt)
 
   return {
     command: codex ? 'codex' : 'claude',

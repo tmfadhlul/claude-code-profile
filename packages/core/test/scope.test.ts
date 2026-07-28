@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { globToRegExp, inScope, scopeReport } from '../src/scope.js'
+import { globToRegExp, inScope, scopeReport, normalizeScope } from '../src/scope.js'
 
 describe('globToRegExp', () => {
   it('matches * within one segment only', () => {
@@ -72,5 +72,36 @@ describe('scopeReport', () => {
     const r = scopeReport(new Map(), after, ['src/web/**'])
     expect(r.touched).toHaveLength(2)
     expect(r.violations).toEqual([])
+  })
+})
+
+describe('findings from the adversarial review', () => {
+  it('treats a bare directory lane as everything under it', () => {
+    // literally, 'src/web' matches zero files — every in-lane edit would read as a violation
+    expect(normalizeScope('src/web')).toBe('src/web/**')
+    expect(normalizeScope('src/web/')).toBe('src/web/**')
+    expect(normalizeScope('src/web/**')).toBe('src/web/**')
+    expect(inScope('src/web/Hero.tsx', ['src/web'])).toBe(true)
+    expect(inScope('src/server/db.ts', ['src/web'])).toBe(false)
+  })
+
+  it('counts work the delegate committed, which leaves no trace in the working tree', () => {
+    const clean = new Map<string, string>()
+    const r = scopeReport(clean, clean, ['src/web/**'], ['src/server/db.ts'])
+    expect(r.touched).toEqual(['src/server/db.ts'])
+    expect(r.violations).toEqual(['src/server/db.ts'])
+  })
+
+  it('counts a file the delegate reverted or deleted', () => {
+    const before = new Map([['src/server/db.ts', 'M:abc']])
+    const r = scopeReport(before, new Map(), ['src/web/**'])
+    expect(r.touched).toEqual(['src/server/db.ts'])
+    expect(r.violations).toEqual(['src/server/db.ts'])
+  })
+
+  it('does not double-report a path that is both committed and dirty', () => {
+    const after = new Map([['src/web/a.tsx', 'M:1']])
+    const r = scopeReport(new Map(), after, ['src/web/**'], ['src/web/a.tsx'])
+    expect(r.touched).toEqual(['src/web/a.tsx'])
   })
 })

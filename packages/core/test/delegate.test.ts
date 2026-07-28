@@ -49,7 +49,7 @@ describe('buildDelegateLaunch', () => {
   it('builds a headless claude invocation with the prompt last', () => {
     const l = buildDelegateLaunch({ ...base, targetAgent: 'claude', model: 'opus' })
     expect(l.command).toBe('claude')
-    expect(l.args).toEqual(['-p', '--model', 'opus', '--dangerously-skip-permissions', 'build the settings panel'])
+    expect(l.args).toEqual(['-p', '--model', 'opus', '--dangerously-skip-permissions', '--', 'build the settings panel'])
     expect(l.env.CLAUDE_CONFIG_DIR).toBe('/home/u/.claude-kimi')
     expect(l.cwd).toBe('/repo')
   })
@@ -71,14 +71,29 @@ describe('buildDelegateLaunch', () => {
     expect(l.command).toBe('codex')
     expect(l.args).toEqual([
       'exec', '-m', 'gpt-5', '--dangerously-bypass-approvals-and-sandbox', '-C', '/repo',
-      'build the settings panel',
+      '--', 'build the settings panel',
     ])
     expect(l.env.CODEX_HOME).toBe('/home/u/.codex')
     expect(l.env).not.toHaveProperty('CLAUDE_CONFIG_DIR')
   })
 
-  it('keeps a prompt that looks like a flag as a positional, not an option', () => {
-    const l = buildDelegateLaunch({ ...base, targetAgent: 'claude', prompt: '--help me refactor' })
-    expect(l.args[l.args.length - 1]).toBe('--help me refactor')
+  it('separates a dash-leading prompt with -- so the child does not parse it as an option', () => {
+    // asserting position alone passed while the feature was broken: `claude -p "-fix"` really
+    // does fail with `unknown option`. Only the separator makes it a positional.
+    for (const agent of ['claude', 'codex'] as const) {
+      const l = buildDelegateLaunch({ ...base, targetAgent: agent, prompt: '-fix the tests' })
+      expect(l.args[l.args.length - 2]).toBe('--')
+      expect(l.args[l.args.length - 1]).toBe('-fix the tests')
+    }
+  })
+
+  it('strips auth and alternate-backend pins a base-URL-only list would miss', () => {
+    const parent = {
+      CLAUDE_CODE_OAUTH_TOKEN: 'parent-oauth', ANTHROPIC_CUSTOM_HEADERS: 'x-route: gateway',
+      CLAUDE_CODE_USE_BEDROCK: '1', CLOUD_ML_REGION: 'us-east5',
+      OPENAI_API_KEY: 'sk-parent', OPENAI_BASE_URL: 'https://gateway.example',
+    }
+    const l = buildDelegateLaunch({ ...base, targetAgent: 'claude', parentEnv: parent })
+    for (const k of Object.keys(parent)) expect(l.env).not.toHaveProperty(k)
   })
 })

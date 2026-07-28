@@ -39,11 +39,21 @@ export function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${re}$`)
 }
 
+/**
+ * A lane written as a bare directory (`src/web` or `src/web/`) means everything under it.
+ * Taken literally it would match exactly zero files and flag every in-lane edit as a
+ * violation — a footgun that makes the check useless in precisely the way that looks broken.
+ */
+export function normalizeScope(scope: string): string {
+  const s = scope.replace(/\\/g, '/').replace(/\/+$/, '')
+  return /[*?]/.test(s) ? s : `${s}/**`
+}
+
 /** True when `file` falls inside any lane. An empty scope list means "no lane declared". */
 export function inScope(file: string, scopes: string[]): boolean {
   if (!scopes.length) return true
   const normalized = file.replace(/\\/g, '/')
-  return scopes.some(s => globToRegExp(s.replace(/\\/g, '/')).test(normalized))
+  return scopes.some(s => globToRegExp(normalizeScope(s)).test(normalized))
 }
 
 export interface ScopeReport {
@@ -55,17 +65,26 @@ export interface ScopeReport {
  * Which files the delegate touched, and which of those left the lane.
  *
  * `before`/`after` map a repo-relative path to a change fingerprint (see snapshotChanges).
- * A path is "touched" if it appears only in `after`, or if its fingerprint moved.
+ * A path counts as touched if its fingerprint appeared, vanished, or moved — the vanish case
+ * matters because a delegate that reverts your edit or deletes your untracked file would
+ * otherwise be invisible.
+ *
+ * `committed` carries paths from commits the delegate made, which leave the working tree clean
+ * and so never show up in either snapshot at all.
  */
 export function scopeReport(
   before: Map<string, string>,
   after: Map<string, string>,
   scopes: string[],
+  committed: string[] = [],
 ): ScopeReport {
-  const touched: string[] = []
+  const touched = new Set(committed.map(f => f.replace(/\\/g, '/')))
   for (const [file, fp] of after) {
-    if (before.get(file) !== fp) touched.push(file)
+    if (before.get(file) !== fp) touched.add(file)
   }
-  touched.sort()
-  return { touched, violations: touched.filter(f => !inScope(f, scopes)) }
+  for (const file of before.keys()) {
+    if (!after.has(file)) touched.add(file) // reverted or deleted
+  }
+  const list = [...touched].sort()
+  return { touched: list, violations: list.filter(f => !inScope(f, scopes)) }
 }

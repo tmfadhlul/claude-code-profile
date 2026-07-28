@@ -25,16 +25,41 @@ function snapshotChanges(cwd: string): Map<string, string> | null {
   const res = spawnSync('git', ['status', '--porcelain', '-z', '-uall'], { cwd, encoding: 'utf8' })
   if (res.status !== 0) return null // not a git repo (or git missing)
   const out = new Map<string, string>()
-  for (const entry of res.stdout.split('\0')) {
+  const records = res.stdout.split('\0')
+  for (let i = 0; i < records.length; i++) {
+    const entry = records[i]
     if (!entry.trim()) continue
     const status = entry.slice(0, 2).trim()
     const file = entry.slice(3)
     if (!file) continue
+    // a rename is TWO records: "R  <new>\0<old>\0". Consume the old path here, or the next
+    // loop treats it as a fresh entry and slices 3 chars off a bare filename.
+    if (status.startsWith('R') || status.startsWith('C')) {
+      const old = records[++i]
+      if (old) out.set(old, 'renamed-away')
+    }
     const st = spawnSync('git', ['--no-optional-locks', 'hash-object', '--', file],
       { cwd, encoding: 'utf8' })
     out.set(file, `${status}:${st.status === 0 ? st.stdout.trim() : 'missing'}`)
   }
   return out
+}
+
+/** Current commit, or null outside a repo / on an unborn branch. */
+function headCommit(cwd: string): string | null {
+  const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' })
+  return r.status === 0 ? r.stdout.trim() : null
+}
+
+/**
+ * Paths changed by commits the delegate made. A delegate told to "commit your work" leaves the
+ * tree clean, so a status-only check reports zero touched files and waves the work through.
+ */
+function committedPaths(cwd: string, from: string | null, to: string | null): string[] {
+  if (!from || !to || from === to) return []
+  const r = spawnSync('git', ['diff', '--name-only', '-z', `${from}..${to}`], { cwd, encoding: 'utf8' })
+  if (r.status !== 0) return []
+  return r.stdout.split('\0').filter(f => f.trim())
 }
 
 async function resolveEnv(ctx: CliContext, env: Record<string, string>): Promise<Record<string, string>> {
@@ -59,7 +84,7 @@ export function registerDelegateCommands(program: Command, ctx: CliContext): voi
     .option('--cwd <dir>', 'working directory for the delegate (default: current directory)')
     .option('--json', 'return structured JSON instead of text (claude profiles only)')
     .option('--skip-permissions', 'let the delegate write files without prompting (headless cannot prompt)')
-    .option('--scope <glob>', 'declare a path lane; report files touched outside it. One delegate at a time — see --help notes (repeatable)', (v: string, acc: string[]) => [...acc, v], [] as string[])
+    .option('--scope <glob>', "declare a path lane, e.g. src/web/** or src/web; reports files touched outside it and exits 3. Accurate for one delegate at a time (repeatable)", (v: string, acc: string[]) => [...acc, v], [] as string[])
     .option('--print', 'print the launch command instead of running it')
     .argument('[prompt...]', 'the task; if omitted, read from stdin')
     .action(async (promptWords: string[], opts: {
@@ -111,14 +136,23 @@ export function registerDelegateCommands(program: Command, ctx: CliContext): voi
       if (scopes.length && !before) {
         throw new Error(`--scope needs a git repo — ${launch.cwd} is not one (or git is unavailable)`)
       }
+      const headBefore = before ? headCommit(launch.cwd) : null
 
       const res = spawnSync(launch.command, launch.args, { stdio: 'inherit', cwd: launch.cwd, env: launch.env })
       if (res.error) throw res.error
-      if (typeof res.status === 'number' && res.status !== 0) process.exitCode = res.status
+      // A signal-killed child has status === null. Reporting that as success lets a caller fold
+      // truncated output in as a completed result.
+      if (res.signal) {
+        console.error(`\ndelegate "${target.name}" was killed by ${res.signal} — output is incomplete`)
+        process.exitCode = 1
+      } else if (typeof res.status === 'number' && res.status !== 0) {
+        process.exitCode = res.status
+      }
 
       if (before) {
         const after = snapshotChanges(launch.cwd)
-        const { touched, violations } = scopeReport(before, after ?? before, scopes)
+        const committed = committedPaths(launch.cwd, headBefore, headCommit(launch.cwd))
+        const { touched, violations } = scopeReport(before, after ?? before, scopes, committed)
         console.error(`\ndelegate "${target.name}" touched ${touched.length} file(s)`)
         for (const f of touched) console.error(`  ${violations.includes(f) ? '✗' : ' '} ${f}`)
         if (violations.length) {
@@ -126,7 +160,8 @@ export function registerDelegateCommands(program: Command, ctx: CliContext): voi
           // `&& git merge` stops rather than folding in an out-of-lane change unseen.
           console.error(`\n${violations.length} file(s) outside scope [${scopes.join(', ')}] `
             + '— review before merging or before trusting a parallel run')
-          process.exitCode = 3
+          // don't mask a real failure: "the delegate crashed" outranks "it strayed"
+          if (!process.exitCode) process.exitCode = 3
         }
       }
     })
