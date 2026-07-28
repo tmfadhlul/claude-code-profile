@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, symlink, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readSessionTranscript, scanSessions, sessionScanCacheStats } from '../src/sessions.js'
+import { readSessionTranscript, scanSessions, sessionScanCacheStats, headCwd, decodeProjectDir } from '../src/sessions.js'
 
 let home: string
 beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'ccp-sess-')) })
@@ -166,5 +166,40 @@ describe('readSessionTranscript', () => {
     expect(await readSessionTranscript({
       sharedRoot: join(home, '.ccprofiles', 'shared'), profiles: [], agent: 'claude', scope: 'shared', id: '../secret',
     })).toBeNull()
+  })
+})
+
+describe('cwd recovery for files too large to scan', () => {
+  // Regression: with a session pool past the scan budget, every file came back truncated with
+  // cwd=null, so project fell back to decodeProjectDir — which turns a hyphen in a real path
+  // segment into a separator. `/Users/lp-stf00543/...` decoded to `/Users/lp/stf00543/...`,
+  // so handoff's cwd match never fired and it reported "no session found for this project".
+  it('decodeProjectDir is lossy for hyphenated path segments — hence the head read', () => {
+    expect(decodeProjectDir('-Users-lp-stf00543-Development-x')).toBe('/Users/lp/stf00543/Development/x')
+  })
+
+  it('recovers cwd from the first whole record in the head slice', () => {
+    const head = [
+      JSON.stringify({ type: 'summary' }),
+      JSON.stringify({ type: 'user', cwd: '/Users/lp-stf00543/Development/personal/ccprofiles' }),
+    ].join('\n')
+    expect(headCwd(head, r => r.cwd)).toBe('/Users/lp-stf00543/Development/personal/ccprofiles')
+  })
+
+  it('skips a trailing record cut mid-line by the byte cap', () => {
+    const cut = JSON.stringify({ cwd: '/real/path' }).slice(0, 12) // truncated JSON
+    expect(headCwd(`${JSON.stringify({ cwd: '/first' })}\n${cut}`, r => r.cwd)).toBe('/first')
+    // a lone partial line yields nothing rather than a parse crash
+    expect(headCwd(cut, r => r.cwd)).toBeNull()
+  })
+
+  it('reads the codex payload shape and skips unparseable or empty values', () => {
+    const head = [
+      'not json at all',
+      JSON.stringify({ type: 'session_meta', payload: { cwd: '' } }),
+      JSON.stringify({ type: 'session_meta', payload: { cwd: '/codex/proj' } }),
+    ].join('\n') + '\n'
+    expect(headCwd(head, r => r?.payload?.cwd)).toBe('/codex/proj')
+    expect(headCwd('', r => r.cwd)).toBeNull()
   })
 })

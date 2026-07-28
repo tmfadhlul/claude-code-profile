@@ -1,4 +1,4 @@
-import { readdir, readFile, stat, lstat } from 'node:fs/promises'
+import { readdir, readFile, stat, lstat, open, type FileHandle } from 'node:fs/promises'
 import { existsSync, type Dirent, type Stats } from 'node:fs'
 import { join } from 'node:path'
 
@@ -53,6 +53,8 @@ const codexSessionCache = new Map<string, CacheEntry>()
 
 /** Per-file cap: a transcript above this size is summarized without reading its content. */
 const MAX_FILE_SCAN_BYTES = 10 * 1024 * 1024
+// enough to reach the first record carrying cwd, without reading a multi-MB transcript
+const HEAD_SCAN_BYTES = 64 * 1024
 /** Per-request cap: once this many bytes have been read from disk in one scanSessions() call,
  *  remaining (uncached) files are summarized without reading their content either. */
 const MAX_TOTAL_SCAN_BYTES = 50 * 1024 * 1024
@@ -67,9 +69,44 @@ export function sessionScanCacheStats(): { hits: number; misses: number } {
   return { hits: scanCacheHits, misses: scanCacheMisses }
 }
 
-/** Best-effort decode of Claude Code's project dir name (cwd from a record is preferred). */
+/**
+ * Last resort only — lossy, and unfixably so. Claude Code encodes a project path by replacing
+ * every '/' with '-', so a segment that legitimately contains a hyphen (`/Users/lp-stf00543`)
+ * cannot be told apart from a separator on the way back. Prefer the `cwd` recorded inside the
+ * session file; `headCwd` exists so that stays available even for files we decline to read.
+ */
 export function decodeProjectDir(name: string): string {
   return name.replace(/^-/, '/').replace(/-/g, '/')
+}
+
+/** First `bytes` of a file, for cheap field recovery without reading a multi-MB transcript. */
+async function readHead(file: string, bytes = HEAD_SCAN_BYTES): Promise<string> {
+  let fh: FileHandle | null = null
+  try {
+    fh = await open(file, 'r')
+    const buf = Buffer.alloc(bytes)
+    const { bytesRead } = await fh.read(buf, 0, bytes, 0)
+    return buf.subarray(0, bytesRead).toString('utf8')
+  } catch {
+    return ''
+  } finally {
+    await fh?.close().catch(() => {})
+  }
+}
+
+/**
+ * First cwd found in a head slice. A slice cut mid-record leaves a partial trailing line, which
+ * simply fails JSON.parse and is skipped — no need to guess which line is incomplete.
+ */
+export function headCwd(head: string, pick: (rec: any) => string | undefined): string | null {
+  for (const line of head.split('\n')) {
+    if (!line.trim()) continue
+    let rec: any
+    try { rec = JSON.parse(line) } catch { continue }
+    const v = pick(rec)
+    if (typeof v === 'string' && v) return v
+  }
+  return null
 }
 
 /**
@@ -84,7 +121,7 @@ async function cachedParse(
   cache: Map<string, CacheEntry>,
   budget: ScanBudget,
   parseFull: (raw: string, st: Stats) => ParsedSession,
-  makeTruncated: (st: Stats) => ParsedSession,
+  makeTruncated: (st: Stats, head: string) => ParsedSession,
 ): Promise<ParsedSession | null> {
   let st: Stats
   try { st = await stat(file) } catch { return null }
@@ -95,11 +132,11 @@ async function cachedParse(
   }
   scanCacheMisses++
   if (st.size > MAX_FILE_SCAN_BYTES) {
-    const result = makeTruncated(st)
+    const result = makeTruncated(st, await readHead(file))
     cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, result })
     return result
   }
-  if (st.size > budget.bytesLeft) return makeTruncated(st) // not cached — budget is per-request
+  if (st.size > budget.bytesLeft) return makeTruncated(st, await readHead(file)) // not cached — budget is per-request
   let raw: string
   try { raw = await readFile(file, 'utf8') } catch { return null }
   budget.bytesLeft -= st.size
@@ -129,7 +166,7 @@ async function parseClaudeSession(file: string, budget: ScanBudget): Promise<Par
       }
       return { meta: { id, mtime: st.mtimeMs, messageCount: lines.length, firstPrompt, gitBranch, model, sizeBytes: st.size }, cwd }
     },
-    st => ({ meta: { id, mtime: st.mtimeMs, messageCount: 0, firstPrompt: null, gitBranch: null, model: null, sizeBytes: st.size, truncated: true }, cwd: null }),
+    (st, head) => ({ meta: { id, mtime: st.mtimeMs, messageCount: 0, firstPrompt: null, gitBranch: null, model: null, sizeBytes: st.size, truncated: true }, cwd: headCwd(head, r => r.cwd) }),
   )
 }
 
@@ -300,7 +337,7 @@ async function parseCodexSession(file: string, budget: ScanBudget): Promise<Pars
       id ??= fallbackId
       return { meta: { id, mtime: st.mtimeMs, messageCount: messageCount || lines.length, firstPrompt, gitBranch, model, sizeBytes: st.size }, cwd }
     },
-    st => ({ meta: { id: fallbackId, mtime: st.mtimeMs, messageCount: 0, firstPrompt: null, gitBranch: null, model: null, sizeBytes: st.size, truncated: true }, cwd: null }),
+    (st, head) => ({ meta: { id: fallbackId, mtime: st.mtimeMs, messageCount: 0, firstPrompt: null, gitBranch: null, model: null, sizeBytes: st.size, truncated: true }, cwd: headCwd(head, r => r?.payload?.cwd) }),
   )
 }
 
