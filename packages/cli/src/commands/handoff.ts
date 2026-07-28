@@ -53,7 +53,7 @@ export function registerHandoffCommands(program: Command, ctx: CliContext): void
 
       const cwd = process.cwd()
       const scanned = await scanSessions({ sharedRoot, profiles })
-      const found = findLastSessionForCwd(scanned, cwd, scope, srcAgent)
+      const found = findLastSessionForCwd(scanned, cwd, scope, srcAgent, ctx.platform.os)
       if (!found) throw new Error(`no ${opts.from} session found for this project (${cwd})`)
 
       const transcript = await readSessionTranscript({ sharedRoot, profiles, agent: srcAgent, scope: found.scope, id: found.id })

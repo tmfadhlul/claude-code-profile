@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { findLastSessionForCwd, renderHandoffMarkdown, buildHandoffLaunch } from '../src/handoff.js'
+import { findLastSessionForCwd, renderHandoffMarkdown, buildHandoffLaunch, samePath } from '../src/handoff.js'
 import type { ProjectSessions, SessionTranscript } from '../src/sessions.js'
 
 function meta(id: string, mtime: number) {
@@ -66,5 +66,33 @@ describe('buildHandoffLaunch', () => {
     expect(l.env).toEqual({ CODEX_HOME: '/home/.codex-work' })
     expect(l.args[0]).toBe('--dangerously-bypass-approvals-and-sandbox')
     expect(l.args[1]).toContain('/h/x.md')
+  })
+})
+
+describe('samePath / windows project matching', () => {
+  // decodeProjectDir is POSIX-only ('C--Users-foo' decodes to 'C//Users/foo'), so on Windows
+  // the cwd recorded inside the transcript is the ONLY usable source — and it has to compare
+  // the way Windows does, or handoff misses its own project on a case or separator difference.
+  it('treats case and separator differences as the same path on win32', () => {
+    expect(samePath('C:\\Users\\foo\\dev', 'c:/users/foo/dev', 'win32')).toBe(true)
+    expect(samePath('C:\\Users\\foo\\dev\\', 'C:\\Users\\foo\\dev', 'win32')).toBe(true)
+    expect(samePath('C:\\Users\\foo', 'C:\\Users\\bar', 'win32')).toBe(false)
+  })
+
+  it('stays exact on posix, where case and separators are meaningful', () => {
+    expect(samePath('/Users/Foo', '/users/foo', 'darwin')).toBe(false)
+    expect(samePath('/Users/foo', '/Users/foo', 'linux')).toBe(true)
+  })
+
+  it('does not collapse a drive root to the empty string', () => {
+    expect(samePath('C:\\', 'c:/', 'win32')).toBe(true)
+    expect(samePath('C:\\', 'd:/', 'win32')).toBe(false)
+  })
+
+  it('finds a windows session whose transcript cwd differs only in case', () => {
+    const scanned = [{ agent: 'claude' as const, scope: 'shared', project: 'C:\\Users\\foo\\my-app',
+      sessions: [{ id: 's1', mtime: 5, messageCount: 1, firstPrompt: null, gitBranch: null, model: null, sizeBytes: 1 }] }]
+    expect(findLastSessionForCwd(scanned, 'c:\\users\\foo\\my-app', 'shared', 'claude', 'win32')?.id).toBe('s1')
+    expect(findLastSessionForCwd(scanned, 'c:\\users\\foo\\my-app', 'shared', 'claude', 'linux')).toBeNull()
   })
 })

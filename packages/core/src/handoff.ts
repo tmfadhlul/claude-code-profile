@@ -1,11 +1,25 @@
 import type { ProjectSessions, SessionTranscript } from './sessions.js'
+import type { OsKind } from './platform.js'
+
+/**
+ * Compare two absolute paths the way the OS would. Windows is case-insensitive and mixes
+ * separators freely (`C:\p` / `c:/p` are one path), so a strict === there silently fails to
+ * match a session against its own project. POSIX is case-sensitive — normalizing it would
+ * merge genuinely distinct paths, so it stays exact.
+ */
+export function samePath(a: string, b: string, os: OsKind): boolean {
+  if (os !== 'win32') return a === b
+  const norm = (p: string) => p.replace(/[\\/]+/g, '\\').replace(/(.)\\+$/, '$1').toLowerCase()
+  return norm(a) === norm(b)
+}
 
 export function findLastSessionForCwd(
   scanned: ProjectSessions[], cwd: string, scope: string, agent: 'claude' | 'codex',
+  os: OsKind = 'linux',
 ): { scope: string; id: string } | null {
   let newest: { id: string; mtime: number } | null = null
   for (const p of scanned) {
-    if (p.project !== cwd || p.scope !== scope || p.agent !== agent) continue
+    if (!samePath(p.project, cwd, os) || p.scope !== scope || p.agent !== agent) continue
     for (const s of p.sessions) if (!newest || s.mtime > newest.mtime) newest = { id: s.id, mtime: s.mtime }
   }
   return newest ? { scope, id: newest.id } : null
