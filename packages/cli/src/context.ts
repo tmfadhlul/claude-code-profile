@@ -11,6 +11,7 @@ import { registerSyncCommands } from './commands/sync.js'
 import { registerBundleCommands } from './commands/bundle.js'
 import { registerSessionCommands } from './commands/sessions.js'
 import { registerHandoffCommands } from './commands/handoff.js'
+import { registerDelegateCommands } from './commands/delegate.js'
 import { registerPluginCommands } from './commands/plugins.js'
 import { registerFixCommand } from './commands/fix.js'
 import { registerProviderCommands } from './commands/provider.js'
@@ -78,6 +79,7 @@ export function buildProgram(ctx: CliContext): Command {
   registerFixCommand(program, ctx)
   registerProviderCommands(program, ctx)
   registerHandoffCommands(program, ctx)
+  registerDelegateCommands(program, ctx)
   registerMcpCommands(program, ctx)
   registerSecretsCommands(program, ctx)
   registerManifestCommands(program, ctx)
