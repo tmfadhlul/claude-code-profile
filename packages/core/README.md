@@ -8,6 +8,9 @@ It provides the discovery, manifest, secrets, apply, and LAN-sync logic used by 
 - Applies profile config (launchers, env, links, MCP servers) with surgical, backed-up edits
 - Reads/writes secrets across macOS Keychain, libsecret, and encrypted-file backends
 - Computes MCP server drift across profiles and both agents (Claude + Codex)
+- Builds headless launches that run one profile's agent as a subagent of another session, stripping the caller's provider env so a gateway profile cannot re-point a Claude delegate (`delegate.ts`)
+- Checks which files a delegate touched against a declared path lane, counting created, edited, deleted, reverted, and committed work (`scope.ts`)
+- Mirrors one `statusLine` block into every claude profile, since Claude Code reads it per `CLAUDE_CONFIG_DIR`
 - Drives encrypted, PIN-paired LAN replication between machines
 
 Repo: [github.com/tmfadhlul/claude-code-profile](https://github.com/tmfadhlul/claude-code-profile)

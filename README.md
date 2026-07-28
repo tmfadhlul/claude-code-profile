@@ -12,6 +12,8 @@ The `clp` command (also available as `ccprofiles`) fixes that:
 - 🧩 **Manage MCP servers** across profiles: drift matrix, add/remove everywhere at once, sync one profile's set to others
 - 🔌 **Manage plugins the same way** — a plugin × profile matrix driving the official `claude plugin` installer, so e.g. `claude-mem` runs on exactly one profile while `superpowers` runs everywhere
 - 🔁 **Hand off a session across agents** — `cl-work handoff codex-work` opens the other agent seeded with the current project's latest session transcript
+- 🤝 **Call another profile as a subagent** — `clp delegate --to kimi "…"` runs a *different provider's* agent on one task from inside your current session and returns the result; the only way to reach Kimi/GLM/Codex from a Claude session, since provider env is process-wide
+- 📊 **One statusline everywhere** — the `statusLine` block is synced into every profile, so a new profile isn't silently bare
 - 🔑 **Pick how Anthropic authenticates per profile** — CLI login, API key, or auth token, from the CLI or the dashboard, token kept in the keychain
 - 🔐 **Secrets out of your rc files** — macOS Keychain / libsecret / encrypted file, with `clp secrets migrate` to clean up existing plaintext keys
 - 🖥️ **Replicate to another machine over LAN** — PIN pairing, end-to-end encrypted, no cloud, works macOS ↔ Windows ↔ Linux ↔ WSL
@@ -135,6 +137,39 @@ cx-work handoff oauth            # and the reverse
 
 It finds your latest session for the current directory, renders the transcript to `~/.ccprofiles/handoffs/<stamp>.md`, and opens the target agent seeded with a prompt pointing at it — a fresh, fully native session on the other side (no fragile session-file translation). Config-only caveats: the target is an explicit profile name, and existing launchers need one `clp apply` to gain the `handoff` verb.
 
+### Call another profile as a subagent
+
+`handoff` moves you to another profile. `delegate` keeps you where you are, runs another profile's agent on one scoped task, and returns its output — a function call rather than a one-way move:
+
+```bash
+clp delegate --to kimi --model opus "rebuild the hero section in src/components/Hero.tsx"
+clp delegate --to oauth --json "summarize the diff on this branch"   # structured output
+cat brief.md | clp delegate --to codex                               # long briefs via stdin
+```
+
+**This is the only way to reach a different provider from inside a session.** `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` are process-wide, and a native Claude Code subagent's `model` is validated against the *current* provider — so a Claude session cannot dispatch a native subagent onto Kimi, GLM, or Codex. `delegate` spawns a real headless agent under the target's `CLAUDE_CONFIG_DIR` (or `CODEX_HOME`), in your current directory, with full tool access. Its summary comes back to you and its file edits land in your tree.
+
+Provider env from the calling session is stripped before the target's is applied. Without that, delegating from a gateway profile (z.ai, kimi, mimo) to a Claude profile would leave the gateway's base URL in place — the delegate would authenticate as your Claude account but send traffic to the gateway, working "fine" while silently on the wrong model.
+
+The delegate starts with a **cold context**: it sees your files and its own profile's `CLAUDE.md`/skills, but not your conversation. Pass file paths and specifics in the prompt, exactly as you would to a native subagent.
+
+#### Keeping delegates in their lane
+
+`--scope` declares a path lane and reports anything the delegate touched outside it, exiting `3` so a chained `&& git merge` stops rather than folding in an unseen change. Nothing is reverted — the work stands and you decide:
+
+```bash
+clp delegate --to kimi --scope 'src/web/**' "build the settings panel"
+
+  delegate "kimi" touched 2 file(s)
+    ✗ src/server/routes.ts
+      src/web/Settings.tsx
+  1 file(s) outside scope [src/web/**] — review before merging
+```
+
+A lane written as a bare directory (`--scope src/web`) means everything under it. The check counts files the delegate created, edited, deleted, reverted, **or committed** — a delegate told to commit its work leaves a clean tree, which a status-only check would wave straight through.
+
+> **Accurate for one delegate at a time.** It works by diffing the working tree, and a snapshot diff cannot tell writers apart — run two delegates concurrently in one tree and each will report the other's files as violations. Parallel delegation needs a worktree per delegate (roadmap), not a smarter diff.
+
 ### Using the launchers on Windows (PowerShell)
 
 On Windows the launchers are **PowerShell functions**, written to the PowerShell 7 profile:
@@ -250,7 +285,7 @@ It's **localhost-only** and guarded by a per-launch session token plus an Origin
 
 Three layers of state:
 
-1. **Live state** — actual `.claude*` / `.codex*` dirs and shell rc files. Tool edits only managed MCP tables (`mcpServers` JSON or `mcp_servers` TOML), Claude `settings.json` env, marked rc block, and declared links.
+1. **Live state** — actual `.claude*` / `.codex*` dirs and shell rc files. Tool edits only managed MCP tables (`mcpServers` JSON or `mcp_servers` TOML), Claude `settings.json` env and `statusLine`, marked rc block, and declared links.
 2. **Manifest** — `~/.ccprofiles/manifest.yaml`, a platform-neutral declaration (paths templated as `{home}`, secrets referenced as `secret://name`). Versioned with local git commits; safe to share.
 3. **Secrets store** — per-machine keychain: macOS Keychain, Linux `secret-tool` (libsecret), or an AES-256-GCM encrypted file as fallback (native Windows and headless Linux — set `CCPROFILES_PASSPHRASE` in your environment for it). Values never appear in the manifest, bundles, or rc files; launcher functions resolve them at run time by calling the CLI.
 
@@ -274,6 +309,7 @@ Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN sh
 | Manifest | `status` · `apply` · `snapshot` |
 | Sessions | `sessions share <profile>` · `sessions unshare <profile>` · `sessions list` |
 | Handoff | `handoff --from p --to p [--print]` (usually via the launcher: `cl-work handoff codex-work`) |
+| Delegate | `delegate --to p [--model m] [--scope glob] [--json] [--cwd d] [--skip-permissions] [--print] "<task>"` |
 | Sync | `serve [--allow-secrets]` · `pair <host> --port n --pin p` · `devices` · `sync --from dev [--with-secrets]` |
 | Bundle | `export <file>` · `import <file>` |
 | Dashboard | `ui [--port n] [--no-open]` |
@@ -294,6 +330,7 @@ All mutating commands support `--dry-run`. Every mutation backs up the files it 
 
 ## Roadmap
 
+- `clp delegate --worktree` — a git worktree per delegate, so several profiles can work a repo in parallel with correct attribution, then merge the disjoint branches. Needs a build/test gate after the merge: disjoint file sets merge without git conflicts but can still break semantically (one side renames an export the other just imported)
 - mDNS auto-discovery for `clp devices`
 - Interactive prompts (`secrets set` without echoing, `adopt` confirmation)
 
