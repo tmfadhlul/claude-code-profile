@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { discoverProfiles, liveProfileName, buildManifest, saveManifest, loadManifest, preserveSecretRefs, ensureRootGitignore, manifestHasPlaintextSecret, planPluginVersionDrift } from 'ccprofiles-core'
+import { discoverProfiles, liveProfileName, buildManifest, saveManifest, loadManifest, preserveSecretRefs, ensureRootGitignore, manifestHasPlaintextSecret, planPluginVersionDrift, repairInstalledPlugins } from 'ccprofiles-core'
 import { existsSync, readFileSync, lstatSync, readlinkSync, readdirSync, mkdirSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -83,6 +83,14 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
     // a comment mentioning a key) — doctor would say "run secrets migrate" and migrate would
     // report "no plaintext keys found", with no way to tell why. Calling the real matcher makes
     // the two commands agree by construction.
+    // Dangling plugin install paths — installed_plugins.json entries whose cache dir was pruned
+    // out from under them. Claude Code refuses to load such a plugin's hooks and prints a Stop-hook
+    // error every session. Dry-run the real repair so doctor and `fix` can never disagree.
+    for (const lp of live) {
+      if (lp.agent !== 'claude') continue
+      for (const line of await repairInstalledPlugins(lp.dir, { dryRun: true }))
+        problems.push(`${liveProfileName(lp)}: stale plugin install path — ${line} — run: ccprofiles fix`)
+    }
     const migratable = await migrateRcSecrets(ctx, { dryRun: true })
     if (migratable.length) problems.push(`plaintext key(s) found in ${ctx.platform.rcFile} (${migratable.join(', ')}) — run: ccprofiles secrets migrate`)
     if (m) for (const pr of m.profiles) {

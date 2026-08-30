@@ -10,6 +10,7 @@ let home: string, calls: string[], ctx: any
 function fake(): PluginRunner {
   return {
     marketplaceAdd: async (_d, s) => { calls.push(`add ${s}`) },
+    marketplaceUpdate: async (_d, n) => { calls.push(`mkt-update ${n}`) },
     install: async (_d, id) => { calls.push(`install ${id}`) },
     uninstall: async (_d, id) => { calls.push(`uninstall ${id}`) },
     update: async (_d, id) => { calls.push(`update ${id}`) },

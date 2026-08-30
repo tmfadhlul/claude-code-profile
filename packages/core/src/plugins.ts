@@ -1,9 +1,13 @@
-import { cp, lstat, mkdir, readdir, readlink, rm, unlink } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { cp, lstat, mkdir, readdir, readFile, readlink, rm, unlink } from 'node:fs/promises'
+import { existsSync, readdirSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+import { atomicWrite } from './fsutil.js'
 
 export interface PluginRunner {
   marketplaceAdd(configDir: string, source: string): Promise<void>
+  /** `claude plugin marketplace update` — refetch the marketplace so "latest" is actually latest.
+   *  Without this, `update` is a silent no-op in any profile whose marketplace clone is stale. */
+  marketplaceUpdate(configDir: string, name: string): Promise<void>
   install(configDir: string, id: string): Promise<void>
   uninstall(configDir: string, id: string): Promise<void>
   /** `claude plugin update` — moves a plugin to the marketplace's latest. There is deliberately no
@@ -90,6 +94,14 @@ export async function reconcileProfilePlugins(opts: {
     }
     await opts.runner.install(opts.configDir, id); log.push(`install ${id}`)
   }
+  // `claude plugin update` moves to the marketplace clone's latest, and that clone is per-profile
+  // and only refreshed on demand. A profile whose clone is months old therefore "updates" to the
+  // version it already has, and cross-profile drift never converges — refetch first.
+  const refreshed = new Set<string>()
+  for (const id of update) {
+    const mkt = marketplaceOf(id)
+    if (mkt && !refreshed.has(mkt)) { await opts.runner.marketplaceUpdate(opts.configDir, mkt); refreshed.add(mkt); log.push(`marketplace update ${mkt}`) }
+  }
   for (const id of update) { await opts.runner.update(opts.configDir, id); log.push(`update ${id}`) }
   return log
 }
@@ -169,4 +181,59 @@ export async function restoreLegacyPluginSymlink(pluginsDir: string): Promise<bo
   await mkdir(pluginsDir, { recursive: true })
   await cp(target, pluginsDir, { recursive: true, force: false, errorOnExist: false })
   return true
+}
+
+/** Highest-semver cache dir that still exists beside a missing one, or null if none survived. */
+function survivingVersionDir(missingPath: string): string | null {
+  const parent = dirname(missingPath)
+  let names: string[]
+  try { names = readdirSync(parent) } catch { return null }
+  const versions = names.filter(n => /^\d/.test(n) && existsSync(join(parent, n))).sort(compareVersionDir)
+  return versions.length ? join(parent, versions[versions.length - 1]) : null
+}
+
+/**
+ * Repair installed_plugins.json entries whose installPath no longer exists on disk.
+ *
+ * This is the other half of pruneStaleVersionDirs. Pruning removes superseded cache dirs but leaves
+ * the bookkeeping untouched, and installed_plugins.json holds one entry PER SCOPE — a `user` entry
+ * plus a `project` entry for every directory Claude was ever launched from. `claude plugin update`
+ * only moves the user-scope pin, so the project-scope entries stay on an old version, and the next
+ * prune deletes the dir underneath them. Claude Code then refuses to load their hooks outright:
+ * "Plugin directory does not exist: .../claude-mem/13.16.1 — run /plugin to reinstall", on every
+ * Stop hook, forever. Six of eight profiles were in that state on 2026-08-30.
+ *
+ * Re-point rather than drop where a sibling version dir survived: the surviving dir is the one
+ * prune kept, i.e. the latest, which is exactly where `claude plugin update` would have moved the
+ * entry anyway — so the repair converges scopes onto one version instead of disabling the plugin.
+ * Only numeric version dirs qualify; a versionless plugin's sha/"unknown" siblings are unrelated
+ * builds, so those entries are dropped and left for `plugins apply` to reinstall.
+ */
+export async function repairInstalledPlugins(configDir: string, opts: { dryRun?: boolean } = {}): Promise<string[]> {
+  const file = join(configDir, 'plugins', 'installed_plugins.json')
+  let doc: { plugins?: Record<string, unknown> }
+  // A corrupt file must not be rewritten from a half-parse — bail and leave it for a human.
+  try { doc = JSON.parse(await readFile(file, 'utf8')) } catch { return [] }
+  if (!doc?.plugins || typeof doc.plugins !== 'object') return []
+  const log: string[] = []
+  for (const [id, entries] of Object.entries(doc.plugins)) {
+    if (!Array.isArray(entries)) continue
+    const kept: Record<string, unknown>[] = []
+    for (const e of entries) {
+      const path = e?.installPath
+      if (typeof path !== 'string' || existsSync(path)) { kept.push(e); continue }
+      const scope = e.scope ?? '?'
+      const survivor = survivingVersionDir(path)
+      if (survivor) {
+        kept.push({ ...e, installPath: survivor, version: basename(survivor) })
+        log.push(`${id} (${scope}): ${e.version} → ${basename(survivor)} — cache dir was pruned`)
+      } else {
+        log.push(`${id} (${scope}): dropped — ${path} is gone and no version survived`)
+      }
+    }
+    if (kept.length) doc.plugins[id] = kept
+    else delete doc.plugins[id]
+  }
+  if (log.length && !opts.dryRun) await atomicWrite(file, JSON.stringify(doc, null, 2) + '\n')
+  return log
 }

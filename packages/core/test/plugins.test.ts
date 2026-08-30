@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, symlink, lstat } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, symlink, lstat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { planPluginReconcile, planPluginVersionDrift, marketplaceOf, claudeMemCacheDirs, pruneStaleVersionDirs, reconcileProfilePlugins, restoreLegacyPluginSymlink, type PluginRunner } from '../src/plugins.js'
+import { planPluginReconcile, planPluginVersionDrift, marketplaceOf, claudeMemCacheDirs, pruneStaleVersionDirs, repairInstalledPlugins, reconcileProfilePlugins, restoreLegacyPluginSymlink, type PluginRunner } from '../src/plugins.js'
 
 describe('planPluginReconcile', () => {
   it('diffs desired vs current', () => {
@@ -115,6 +115,7 @@ function fakeRunner() {
   const calls: string[] = []
   const runner: PluginRunner = {
     marketplaceAdd: async (_d, s) => { calls.push(`add ${s}`) },
+    marketplaceUpdate: async (_d, n) => { calls.push(`mkt-update ${n}`) },
     install: async (_d, id) => { calls.push(`install ${id}`) },
     uninstall: async (_d, id) => { calls.push(`uninstall ${id}`) },
     update: async (_d, id) => { calls.push(`update ${id}`) },
@@ -146,7 +147,9 @@ describe('reconcileProfilePlugins', () => {
       configDir: '/cfg', desired: ['claude-mem@thedotmack'], current: ['claude-mem@thedotmack'],
       marketplaces: { thedotmack: { source: 'o/cm' } }, runner, updateIds: ['claude-mem@thedotmack'],
     })
-    expect(calls).toEqual(['update claude-mem@thedotmack'])
+    // marketplace refresh first: without it `claude plugin update` resolves "latest" from a stale
+    // per-profile clone and no-ops, so cross-profile drift never converges.
+    expect(calls).toEqual(['mkt-update thedotmack', 'update claude-mem@thedotmack'])
   })
 
   it('leaves a non-drifting profile completely alone', async () => {
@@ -194,5 +197,54 @@ describe('restoreLegacyPluginSymlink', () => {
     await expect(restoreLegacyPluginSymlink(pdir)).rejects.toThrow()
     // the symlink must still be intact — never replaced with an empty real dir
     expect((await lstat(pdir)).isSymbolicLink()).toBe(true)
+  })
+})
+
+describe('repairInstalledPlugins', () => {
+  // the 2026-08-30 shape: user scope updated to 13.18.0, prune deleted 13.15.2, and the
+  // project-scope entry still points at the deleted dir — a Stop-hook error every session.
+  const write = async (home: string, plugins: unknown) => {
+    await mkdir(join(home, 'plugins'), { recursive: true })
+    await writeFile(join(home, 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins }))
+  }
+  const read = async (home: string) =>
+    JSON.parse(await readFile(join(home, 'plugins', 'installed_plugins.json'), 'utf8'))
+
+  const entry = (home: string, scope: string, version: string) => ({
+    scope, version, installPath: join(home, 'plugins', 'cache', 'thedotmack', 'claude-mem', version),
+  })
+
+  it('re-points a dangling entry at the surviving version and leaves live entries alone', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-repair-'))
+    await mkdir(join(home, 'plugins', 'cache', 'thedotmack', 'claude-mem', '13.18.0'), { recursive: true })
+    await write(home, { 'claude-mem@thedotmack': [entry(home, 'user', '13.18.0'), entry(home, 'project', '13.15.2')] })
+
+    const log = await repairInstalledPlugins(home)
+    expect(log).toHaveLength(1)
+    const after = (await read(home)).plugins['claude-mem@thedotmack']
+    expect(after.map((e: { version: string }) => e.version)).toEqual(['13.18.0', '13.18.0'])
+    expect(after[1].installPath).toBe(entry(home, 'project', '13.18.0').installPath)
+  })
+
+  it('drops the entry when no version dir survived, and the id when no entry survives', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-repair-'))
+    await write(home, { 'gone@mkt': [entry(home, 'user', '1.0.0')] })
+    expect(await repairInstalledPlugins(home)).toHaveLength(1)
+    expect((await read(home)).plugins['gone@mkt']).toBeUndefined()
+  })
+
+  it('dryRun reports without writing', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-repair-'))
+    await write(home, { 'gone@mkt': [entry(home, 'user', '1.0.0')] })
+    expect(await repairInstalledPlugins(home, { dryRun: true })).toHaveLength(1)
+    expect((await read(home)).plugins['gone@mkt']).toHaveLength(1)
+  })
+
+  it('returns [] for a missing or corrupt installed_plugins.json', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-repair-'))
+    expect(await repairInstalledPlugins(home)).toEqual([])
+    await mkdir(join(home, 'plugins'), { recursive: true })
+    await writeFile(join(home, 'plugins', 'installed_plugins.json'), '{ not json')
+    expect(await repairInstalledPlugins(home)).toEqual([])
   })
 })

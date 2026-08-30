@@ -102,6 +102,7 @@ describe('cross-device sync', () => {
       ...makeContext({ CCPROFILES_TEST_HOME: winHome, CCPROFILES_PASSPHRASE: 'pw', SHELL: '/bin/zsh' } as any),
       pluginRunner: {
         marketplaceAdd: async (_d: string, src: string) => { calls.push(`add ${src}`) },
+        marketplaceUpdate: async (_d: string, n: string) => { calls.push(`mkt-update ${n}`) },
         install: async (_d: string, id: string) => { calls.push(`install ${id}`) },
         uninstall: async (_d: string, id: string) => { calls.push(`uninstall ${id}`) },
         update: async (_d: string, id: string) => { calls.push(`update ${id}`) },

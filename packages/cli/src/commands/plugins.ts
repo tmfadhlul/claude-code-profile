@@ -1,7 +1,7 @@
 import type { Command } from 'commander'
 import {
   discoverProfiles, liveProfileName, saveManifest, reconcileProfilePlugins, restoreLegacyPluginSymlink,
-  planPluginVersionDrift, claudeMemCacheDirs, pruneStaleVersionDirs, renderPath, type PluginRunner, type Manifest,
+  planPluginVersionDrift, claudeMemCacheDirs, pruneStaleVersionDirs, repairInstalledPlugins, renderPath, type PluginRunner, type Manifest,
 } from 'ccprofiles-core'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
@@ -21,6 +21,7 @@ export function claudeRunner(): PluginRunner {
     // (assertSafeManifest already rejects leading-'-' identifiers before this ever runs.)
     // marketplace add tolerates an already-added marketplace (install will fail clearly if truly missing)
     marketplaceAdd: (cd, source) => run(cd, ['marketplace', 'add', '--', source]).catch(() => {}),
+    marketplaceUpdate: (cd, name) => run(cd, ['marketplace', 'update', '--', name]),
     install: (cd, id) => run(cd, ['install', '--', id]),
     uninstall: (cd, id) => run(cd, ['uninstall', '--', id]),
     update: (cd, id) => run(cd, ['update', '--', id]),
@@ -76,6 +77,10 @@ export async function reconcilePlugins(ctx: CliContext, m: Manifest, names: stri
  * pinned version, so a leftover old dir revives the fight (see pruneStaleVersionDirs). Safe to run
  * anytime — no network, only removes superseded copies. Scoped to claude-mem, the one plugin with
  * shared `~/.claude-mem` singleton state; other plugins keep their old caches for rollback.
+ *
+ * Then repair installed_plugins.json in every claude profile, because pruning (here and in earlier
+ * releases) leaves per-scope entries pointing at the dirs it just deleted, and Claude Code turns a
+ * dangling entry into a hard hook failure on every session (see repairInstalledPlugins).
  */
 export async function prunePluginCaches(ctx: CliContext): Promise<string[]> {
   const live = await discoverProfiles(ctx.home)
@@ -86,6 +91,7 @@ export async function prunePluginCaches(ctx: CliContext): Promise<string[]> {
       const removed = await pruneStaleVersionDirs(cache)
       if (removed.length) log.push(`${liveProfileName(lp)}: pruned stale claude-mem cache — ${removed.join(', ')}`)
     }
+    for (const line of await repairInstalledPlugins(lp.dir)) log.push(`${liveProfileName(lp)}: ${line}`)
   }
   return log
 }
