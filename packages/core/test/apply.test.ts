@@ -203,15 +203,26 @@ describe('settingsEnv apply', () => {
     const mode = statSync(join(dir, 'settings.json')).mode & 0o777
     expect(mode).toBe(0o600)
   })
-  it('empty settingsEnv never touches settings.json', async () => {
+  it('empty settingsEnv clears live env — this is how `provider anthropic --login` drops a token', async () => {
     const home = await mkdtemp(join(tmpdir(), 'ccp-apply-senv2-'))
     const p = platformFor(home)
     const dir = join(home, '.claude-z')
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, '.claude.json'), '{}')
-    await writeFile(join(dir, 'settings.json'), JSON.stringify({ env: { HAND: 'edited' } }))
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ model: 'opus', env: { ANTHROPIC_AUTH_TOKEN: 'sk-old' } }))
     const m = manifestWith({})
     const actions = planApply(m, await discoverProfiles(home), p)
+    expect(actions.some(a => a.kind === 'set-settings-env')).toBe(true)
+    await executeApply(actions, { backupRoot: join(home, 'bk'), stamp: 's1' })
+    const s = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8'))
+    expect(s.env).toEqual({})
+    expect(s.model).toBe('opus')
+    // converges: nothing left to do on the next pass
+    expect(planApply(m, await discoverProfiles(home), p).filter(a => a.kind === 'set-settings-env')).toEqual([])
+  })
+  it('empty settingsEnv on a profile with no live dir plans no settings write', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ccp-apply-senv2b-'))
+    const actions = planApply(manifestWith({}), [], platformFor(home))
     expect(actions.filter(a => a.kind === 'set-settings-env')).toEqual([])
   })
   it('planApply without resolved map throws if secret refs present', async () => {

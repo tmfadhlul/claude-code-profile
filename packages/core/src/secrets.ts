@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { atomicWrite } from './fsutil.js'
+import { SAFE_NAME } from './manifest.js'
 import type { Platform } from './platform.js'
 
 export interface SecretsBackend {
@@ -170,6 +171,7 @@ export class SecretsStore {
   get backendName(): string { return this.backend.name }
   async get(key: string): Promise<string | null> { return this.backend.get(key) }
   async set(key: string, value: string): Promise<void> {
+    if (!SAFE_NAME.test(key)) throw new Error(`unsafe secret name: ${JSON.stringify(key)} (allowed: letters, digits, - _; must not start with -)`)
     await this.backend.set(key, value)
     await this.writeIndex([...(await this.readIndex()), key])
   }

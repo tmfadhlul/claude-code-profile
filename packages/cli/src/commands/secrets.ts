@@ -145,6 +145,24 @@ export function registerSecretsCommands(program: Command, ctx: CliContext): void
     for (const n of await store.list()) console.log(`${n}  (${store.backendName})`)
   })
 
+  // The only way out for a secret stored under a name assertSafeManifest rejects (`@`, `.`, a
+  // leading `-`): it can be read and deleted, but never referenced, so it can't be attached.
+  // Refs are not rewritten — same rule as `rm`, detach first — so no apply is needed here.
+  sec.command('rename <old> <new>').action(async (oldName: string, newName: string) => {
+    const store = await secretsStore(ctx)
+    const value = await store.get(oldName)
+    if (value === null) throw new Error(`no such secret: ${oldName}`)
+    if (existsSync(join(ctx.manifestRoot, 'manifest.yaml'))) {
+      const ref = `secret://${oldName}`
+      for (const pr of (await loadManifest(ctx.manifestRoot)).profiles)
+        for (const [k, v] of [...Object.entries(pr.env), ...Object.entries(pr.settingsEnv)])
+          if (v === ref) throw new Error(`"${oldName}" is referenced by profile "${pr.name}" (${k}) — detach it first`)
+    }
+    await store.set(newName, value) // validates newName; old value stays put until this succeeds
+    await store.delete(oldName)
+    console.log(`renamed ${oldName} -> ${newName}`)
+  })
+
   sec.command('rm <name>').action(async (name: string) => {
     const store = await secretsStore(ctx)
     await store.delete(name)

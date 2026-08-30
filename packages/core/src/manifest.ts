@@ -58,7 +58,9 @@ export type MarketplaceDef = z.infer<typeof MarketplaceSchema>
 // identifiers that get interpolated into shell launcher code must be injection-safe
 // leading '-' is forbidden (but internal '-' still allowed) so a value can never be parsed as a
 // CLI flag when passed as a positional argv entry (e.g. `claude plugin install <id>`)
-const SAFE_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/ // profile names, launcher names, secret refs
+// exported: SecretsStore.set() rejects names this forbids, so a secret can never be stored under
+// a name no manifest could ever reference (the failure used to surface only at attach time)
+export const SAFE_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/ // profile names, launcher names, secret refs
 const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/ // POSIX/PowerShell env var names
 const SAFE_LINK_ENTRY = /^[A-Za-z0-9._-]+$/     // one profile-dir child; never a path
 const SAFE_SOURCE = /^[A-Za-z0-9._@:/][A-Za-z0-9._/@:-]*$/ // marketplace source (interpolated into `claude plugin` shell-out); no leading '-'
@@ -179,7 +181,9 @@ export async function saveManifest(root: string, m: Manifest): Promise<void> {
 /** True for the two git outcomes saveManifest treats as expected/benign, not a real failure. */
 function isBenignGitError(e: unknown): boolean {
   const text = gitErrorMessage(e)
-  return /nothing to commit/i.test(text) || /not a git repository/i.test(text)
+  // "no changes added to commit" is git's wording when the only dirty paths are ones `add -A`
+  // cannot stage (nested repos) — still nothing for us to commit.
+  return /nothing to commit/i.test(text) || /no changes added to commit/i.test(text) || /not a git repository/i.test(text)
 }
 
 function gitErrorMessage(e: unknown): string {

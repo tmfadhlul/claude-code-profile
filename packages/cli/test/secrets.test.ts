@@ -25,6 +25,19 @@ describe('ccprofiles secrets', () => {
     await run(['secrets', 'rm', 'api-key'])
     expect(await run(['secrets', 'list'])).not.toContain('api-key')
   })
+  it('rename moves the value and leaves the old name behind', async () => {
+    await run(['secrets', 'set', 'old-name', 'sk-ant-xyz'])
+    await run(['secrets', 'rename', 'old-name', 'data-plb-token'])
+    expect(await run(['secrets', 'get', 'data-plb-token'])).toBe('sk-ant-xyz')
+    const list = await run(['secrets', 'list'])
+    expect(list).toContain('data-plb-token')
+    expect(list).not.toContain('old-name')
+  })
+  it('rename to a name no manifest could reference fails without touching the original', async () => {
+    await run(['secrets', 'set', 'old-name', 'sk-ant-xyz'])
+    await expect(run(['secrets', 'rename', 'old-name', 'data@propertylimbrothers.com'])).rejects.toThrow(/unsafe secret name/)
+    expect(await run(['secrets', 'get', 'old-name'])).toBe('sk-ant-xyz')
+  })
   it('migrate moves plaintext keys out of rc', async () => {
     const rc = await seedRc(home, envKeyLine('ANTHROPIC_API_KEY', 'sk-ant-api03-SECRET') + '\n# keep me\n')
     const out = await run(['secrets', 'migrate'])

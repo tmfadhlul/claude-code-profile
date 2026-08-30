@@ -134,7 +134,9 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
     }
 
     const senv = pr.settingsEnv ?? {} // literals in older tests may omit the field
-    if (agent === 'claude' && Object.keys(senv).length > 0) {
+    // No length guard: an empty settingsEnv is a declaration ("no env"), so it must still clear
+    // whatever is live — otherwise `provider anthropic --login` leaves the old token in place.
+    if (agent === 'claude') {
       let desired = resolvedSettingsEnv?.[pr.name]
       if (!desired) {
         if (Object.values(senv).some(v => v.startsWith(SECRET_PREFIX)))
@@ -142,7 +144,10 @@ export function planApply(m: Manifest, live: LiveProfile[], p: Platform, resolve
         desired = senv
       }
       const currentEnv = lp?.settingsEnv ?? null
-      if (!currentEnv || JSON.stringify(sortKeys(currentEnv)) !== JSON.stringify(sortKeys(desired))) {
+      const drift = currentEnv
+        ? JSON.stringify(sortKeys(currentEnv)) !== JSON.stringify(sortKeys(desired))
+        : Object.keys(desired).length > 0 // no live dir yet: don't create settings.json just to write {}
+      if (drift) {
         actions.push({ kind: 'set-settings-env', settingsPath: join(dir, 'settings.json'), env: desired })
       }
     }

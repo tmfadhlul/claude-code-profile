@@ -46,6 +46,13 @@ describe('SecretsStore', () => {
     await store.set('a', '1'); await store.set('b', '2'); await store.delete('a')
     expect(await store.list()).toEqual(['b'])
   })
+  it('rejects a name no manifest could reference, storing nothing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ccp-'))
+    const store = new SecretsStore(new FileBackend(join(dir, 's.enc'), 'pw'), join(dir, 'index.json'))
+    await expect(store.set('data@propertylimbrothers.com', 'tok')).rejects.toThrow(/unsafe secret name/)
+    await expect(store.set('-leading-dash', 'tok')).rejects.toThrow(/unsafe secret name/)
+    expect(await store.list()).toEqual([])
+  })
   it('writes the name index with 0600 permissions', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ccp-'))
     const store = new SecretsStore(new FileBackend(join(dir, 's.enc'), 'pw'), join(dir, 'index.json'))
