@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { requireManifest, type CliContext } from '../context.js'
 import { planActions } from '../plan.js'
 import { secretsStore } from './secrets.js'
+import { ensureManifestStatusline } from '../statusline-install.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
@@ -36,7 +37,8 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
       const oldM = await loadManifest(ctx.manifestRoot)
       let store: Awaited<ReturnType<typeof secretsStore>> | null = null
       await preserveSecretRefs(m, oldM, async name => { store ??= await secretsStore(ctx); return store.get(name) })
-    }
+      ensureManifestStatusline(m, oldM)
+    } else ensureManifestStatusline(m)
     await saveManifest(ctx.manifestRoot, m)
     console.log(`snapshot: ${m.profiles.length} profiles, ${Object.keys(m.mcpServers).length} mcp servers`)
   })

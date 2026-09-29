@@ -1,6 +1,6 @@
 {
   "name": "claude-account-sync",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "Manage multiple Claude Code accounts/profiles — MCP drift sync, keychain secrets, and encrypted LAN replication between machines. CLI: ccprofiles (alias clp).",
   "type": "module",
   "bin": {
@@ -9,7 +9,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "postinstall.mjs"
   ],
   "license": "MIT",
   "funding": {
@@ -38,10 +39,11 @@
     "node": ">=20"
   },
   "dependencies": {
-    "ccprofiles-core": "^0.11.0",
+    "ccprofiles-core": "^0.11.1",
     "commander": "^12.1.0"
   },
   "scripts": {
-    "prepack": "cd ../.. && npm run build && node -e \"require('fs').copyFileSync('README.md','packages/cli/README.md')\""
+    "prepack": "cd ../.. && npm run build && node -e \"require('fs').copyFileSync('README.md','packages/cli/README.md')\"",
+    "postinstall": "node postinstall.mjs"
   }
 }

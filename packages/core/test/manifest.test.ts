@@ -31,6 +31,10 @@ describe('manifest', () => {
     const bad = { ...sample, mcpServers: {} }
     expect(() => parseManifest(serializeManifest(bad))).toThrow(/undefined mcp server/i)
   })
+  it('rejects missing or self-referential fallback profiles', () => {
+    expect(() => parseManifest(serializeManifest({ ...sample, profiles: [{ ...sample.profiles[0], fallback: 'missing' }] }))).toThrow(/invalid Claude fallback/)
+    expect(() => parseManifest(serializeManifest({ ...sample, profiles: [{ ...sample.profiles[0], fallback: 'oauth' }] }))).toThrow(/invalid Claude fallback/)
+  })
   it('loads and saves from a root dir', async () => {
     const root = await mkdtemp(join(tmpdir(), 'ccp-'))
     await saveManifest(root, sample)

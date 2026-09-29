@@ -35,7 +35,8 @@ function renderPosix(pr: ProfileDecl, p: Platform): string {
   const flag = pr.skipPermissions ? codex ? ' --dangerously-bypass-approvals-and-sandbox' : ' --dangerously-skip-permissions' : ''
   const home = codex ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'
   const command = codex ? 'codex' : 'claude'
-  lines.push(`  ${home}="${profileDirExpr(pr, p)}" ${command}${flag} "$@"`, '}')
+  if (!codex && pr.fallback) lines.push(`  command ccprofiles fallback run --from ${pr.name} -- "$@"`, '}')
+  else lines.push(`  ${home}="${profileDirExpr(pr, p)}" ${command}${flag} "$@"`, '}')
   return lines.join('\n')
 }
 
@@ -51,7 +52,8 @@ function renderPwsh(pr: ProfileDecl, p: Platform): string {
   const flag = pr.skipPermissions ? codex ? ' --dangerously-bypass-approvals-and-sandbox' : ' --dangerously-skip-permissions' : ''
   const home = codex ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'
   const command = codex ? 'codex' : 'claude'
-  lines.push(`  $env:${home} = "${profileDirExpr(pr, p)}"`, `  ${command}${flag} @args`, '}')
+  if (!codex && pr.fallback) lines.push(`  ccprofiles fallback run --from ${pr.name} -- @args`, '}')
+  else lines.push(`  $env:${home} = "${profileDirExpr(pr, p)}"`, `  ${command}${flag} @args`, '}')
   return lines.join('\n')
 }
 

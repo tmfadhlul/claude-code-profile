@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import type { CliContext } from '../context.js'
 import { KEY_VARS, secretsStore, migrateRcSecrets } from './secrets.js'
+import { ensureManifestStatusline } from '../statusline-install.js'
 
 export function registerProfileCommands(program: Command, ctx: CliContext): void {
   program.command('list').description('list Claude Code and Codex profiles').action(async () => {
@@ -30,7 +31,8 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
         const oldM = await loadManifest(ctx.manifestRoot)
         let store: Awaited<ReturnType<typeof secretsStore>> | null = null
         await preserveSecretRefs(manifest, oldM, async name => { store ??= await secretsStore(ctx); return store.get(name) })
-      }
+        ensureManifestStatusline(manifest, oldM)
+      } else ensureManifestStatusline(manifest)
       // git init pre-creates manifestRoot at 0755 if it doesn't exist yet, and a later
       // mkdir(root,{mode:0700}) is a no-op on an existing dir — so lock it down first.
       if (!existsSync(ctx.manifestRoot)) mkdirSync(ctx.manifestRoot, { recursive: true, mode: 0o700 })

@@ -16,6 +16,8 @@ import { registerPluginCommands } from './commands/plugins.js'
 import { registerFixCommand } from './commands/fix.js'
 import { registerProviderCommands } from './commands/provider.js'
 import { registerUiCommand } from './ui/command.js'
+import { registerFallbackCommands } from './commands/fallback.js'
+import { statuslineFromStdin } from './statusline.js'
 
 // createRequire (not a JSON import assertion) so this works under NodeNext ESM without
 // resolveJsonModule, and resolves the same way from src/ (ts-node/vitest) and dist/ (built) —
@@ -80,6 +82,8 @@ export function buildProgram(ctx: CliContext): Command {
   registerProviderCommands(program, ctx)
   registerHandoffCommands(program, ctx)
   registerDelegateCommands(program, ctx)
+  registerFallbackCommands(program, ctx)
+  program.command('statusline').description('render the bundled Claude status line').action(statuslineFromStdin)
   registerMcpCommands(program, ctx)
   registerSecretsCommands(program, ctx)
   registerManifestCommands(program, ctx)

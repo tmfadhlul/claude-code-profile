@@ -97,6 +97,7 @@ export async function preserveSecretRefs(
     const old = oldM.profiles.find(p => p.name === pr.name)
     if (!old) continue
     pr.skipPermissions = old.skipPermissions
+    pr.fallback = old.fallback
     // buildManifest derives `cl-<dirname>`, which silently renames a hand-picked alias
     // (cl-plb -> cl-data-plb) and makes the next apply rewrite the user's rc block.
     pr.launcher = old.launcher

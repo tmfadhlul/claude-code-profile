@@ -13,6 +13,7 @@ import { reconcilePlugins } from '../commands/plugins.js'
 import { runAutoFixes } from '../commands/fix.js'
 import { sendJson, readJson, HttpError, type Route } from './http.js'
 import { planActions, planActionsPreflight } from '../plan.js'
+import { ensureManifestStatusline } from '../statusline-install.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
@@ -60,7 +61,8 @@ export function buildRoutes(ctx: CliContext): Route[] {
       const oldM = await loadManifest(ctx.manifestRoot)
       let store: Awaited<ReturnType<typeof secretsStore>> | null = null
       await preserveSecretRefs(manifest, oldM, async name => { store ??= await secretsStore(ctx); return store.get(name) })
-    }
+      ensureManifestStatusline(manifest, oldM)
+    } else ensureManifestStatusline(manifest)
     // git init pre-creates manifestRoot at 0755 if it doesn't exist yet, and a later
     // mkdir(root,{mode:0700}) is a no-op on an existing dir — so lock it down first.
     if (!existsSync(ctx.manifestRoot)) mkdirSync(ctx.manifestRoot, { recursive: true, mode: 0o700 })
@@ -89,6 +91,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
         settingsEnv: decl?.settingsEnv ?? {}, liveSettingsEnv: lp.settingsEnv,
         skipPermissions: decl?.skipPermissions ?? false,
         sharedSessions: decl?.sharedSessions ?? false,
+        fallback: decl?.fallback ?? null,
       }
     })
     sendJson(res, 200, rows)
@@ -176,6 +179,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     if (idx === -1) throw new HttpError(404, `unknown profile: ${name}`)
     if (m.hub === name) throw new HttpError(400, `profile "${name}" is the hub — change the hub first`)
     m.profiles.splice(idx, 1)
+    for (const p of m.profiles) if (p.fallback === name) delete p.fallback
     for (const s of Object.keys(m.mcpServers))
       if (!m.profiles.some(p => p.mcp.includes(s))) delete m.mcpServers[s]
     assertSafe(m)

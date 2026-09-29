@@ -13,7 +13,7 @@ The `clp` command (also available as `ccprofiles`) fixes that:
 - 🔌 **Manage plugins the same way** — a plugin × profile matrix driving the official `claude plugin` installer, so e.g. `claude-mem` runs on exactly one profile while `superpowers` runs everywhere
 - 🔁 **Hand off a session across agents** — `cl-work handoff codex-work` opens the other agent seeded with the current project's latest session transcript
 - 🤝 **Call another profile as a subagent** — `clp delegate --to kimi "…"` runs a *different provider's* agent on one task from inside your current session and returns the result; the only way to reach Kimi/GLM/Codex from a Claude session, since provider env is process-wide
-- 📊 **One statusline everywhere** — the `statusLine` block is synced into every profile, so a new profile isn't silently bare
+- 📊 **One statusline everywhere** — a bundled three-line default is installed when none exists, then synced into every profile
 - 🔑 **Pick how Anthropic authenticates per profile** — CLI login, API key, or auth token, from the CLI or the dashboard, token kept in the keychain
 - 🔐 **Secrets out of your rc files** — macOS Keychain / libsecret / encrypted file, with `clp secrets migrate` to clean up existing plaintext keys
 - 🖥️ **Replicate to another machine over LAN** — PIN pairing, end-to-end encrypted, no cloud, works macOS ↔ Windows ↔ Linux ↔ WSL
@@ -30,6 +30,14 @@ npm install -g claude-account-sync
 ```
 
 This installs two equivalent commands: `clp` (short) and `ccprofiles` (full). The docs below use `clp`.
+
+Global install adds the bundled statusline to `~/.claude/settings.json` and existing
+Claude profiles only when they have no `statusLine`. It preserves custom lines. The
+three lines show profile/model/context/branch, session and weekly usage, and reset
+timers. Fable-specific usage shows `—` because Claude Code's statusline payload does
+not provide that metric. Usage figures appear after Claude's first response on a
+supported subscription. `clp adopt --yes` carries any existing custom line into
+the manifest and mirrors it across profiles.
 
 <details><summary>Install from source instead</summary>
 
@@ -105,6 +113,26 @@ cx-work login                    # signs in inside that CODEX_HOME
 ```
 
 Codex homes use `config.toml` MCP tables and file-backed `auth.json`; ccprofiles never copies auth into manifest. Set `cli_auth_credentials_store = "file"` per Codex home when strict account isolation is required—OS keyring storage can otherwise remain shared.
+
+### Automatic Claude account fallback
+
+Set a fallback in each direction, then reload your shell. The existing `cl-*` launchers
+will restart Claude in the same terminal and resume the conversation when Claude Code
+reports a rate-limit failure. Both profiles should use `sessions share` so the resumed
+conversation remains available from either account.
+
+```bash
+clp fallback set oauth cl-lim
+clp fallback set cl-lim oauth
+clp sessions share oauth
+clp sessions share cl-lim
+```
+
+Fallback runs only after Claude Code reports a `rate_limit` turn failure, not for other
+API errors. If both profiles reach their limits during one launcher run, it stops
+instead of switching forever. Use `clp fallback clear oauth` to remove one direction.
+The restart preserves transcript context; Claude must re-check the current files before
+continuing any interrupted action.
 
 ### Share resumable sessions across profiles
 
@@ -309,6 +337,7 @@ Pairing performs an X25519 ECDH key exchange authenticated by the 6-digit PIN sh
 | Manifest | `status` · `apply` · `snapshot` |
 | Sessions | `sessions share <profile>` · `sessions unshare <profile>` · `sessions list` |
 | Handoff | `handoff --from p --to p [--print]` (usually via the launcher: `cl-work handoff codex-work`) |
+| Fallback | `fallback set <from> <to>` · `fallback clear <from>` (automatic Claude account switch after rate limit) |
 | Delegate | `delegate --to p [--model m] [--scope glob] [--json] [--cwd d] [--skip-permissions] [--print] "<task>"` |
 | Sync | `serve [--allow-secrets]` · `pair <host> --port n --pin p` · `devices` · `sync --from dev [--with-secrets]` |
 | Bundle | `export <file>` · `import <file>` |

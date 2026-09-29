@@ -9,6 +9,11 @@ const exec = promisify(execFile)
 
 export class ManifestError extends Error {}
 
+/** Bundled status line used when a Claude profile has no existing statusLine setting. */
+export const DEFAULT_STATUS_LINE = {
+  type: 'command', command: 'clp statusline', padding: 0, refreshInterval: 10,
+} as const
+
 const McpServerSchema = z.object({
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
@@ -32,6 +37,7 @@ const ProfileSchema = z.object({
   settingsEnv: z.record(z.string()).default({}),
   skipPermissions: z.boolean().default(false),
   sharedSessions: z.boolean().default(false),
+  fallback: z.string().optional(),
   plugins: z.array(z.string()).default([]),
 })
 
@@ -91,6 +97,7 @@ function hasDotDotSegment(path: string): boolean {
 export function assertSafeManifest(m: Manifest): void {
   for (const p of m.profiles) {
     if (!SAFE_NAME.test(p.name)) throw new ManifestError(`unsafe profile name: ${JSON.stringify(p.name)} (allowed: letters, digits, - _)`)
+    if (p.fallback !== undefined && !SAFE_NAME.test(p.fallback)) throw new ManifestError(`unsafe fallback profile in profile "${p.name}": ${JSON.stringify(p.fallback)}`)
     if (p.launcher !== null && !SAFE_NAME.test(p.launcher)) throw new ManifestError(`unsafe launcher name in profile "${p.name}": ${JSON.stringify(p.launcher)}`)
     if (SHELL_META.test(p.dir)) throw new ManifestError(`unsafe profile dir in profile "${p.name}": ${JSON.stringify(p.dir)}`)
     if (hasDotDotSegment(p.dir)) throw new ManifestError(`unsafe profile dir in profile "${p.name}": ${JSON.stringify(p.dir)} (must not contain a ".." segment)`)
@@ -132,6 +139,11 @@ export function parseManifest(text: string): Manifest {
   const m = res.data
   for (const p of m.profiles) for (const name of p.mcp)
     if (!m.mcpServers[name]) throw new ManifestError(`profile "${p.name}" references undefined mcp server "${name}"`)
+  for (const p of m.profiles) if (p.fallback !== undefined) {
+    const target = m.profiles.find(q => q.name === p.fallback)
+    if (!target || (target.agent ?? 'claude') !== 'claude' || (p.agent ?? 'claude') !== 'claude' || target.name === p.name)
+      throw new ManifestError(`profile "${p.name}" has invalid Claude fallback "${p.fallback}"`)
+  }
   for (const p of m.profiles) for (const id of p.plugins) {
     const at = id.lastIndexOf('@')
     const mkt = at > 0 ? id.slice(at + 1) : ''
