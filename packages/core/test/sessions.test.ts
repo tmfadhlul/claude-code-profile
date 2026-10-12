@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, symlink, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readSessionTranscript, scanSessions, sessionScanCacheStats, headCwd, decodeProjectDir } from '../src/sessions.js'
+import { readSessionTranscript, scanSessions, sessionScanCacheStats, headCwd, decodeProjectDir, recentSessions, resumeCommand, sessionOwner, sessionTitle } from '../src/sessions.js'
 
 let home: string
 beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'ccp-sess-')) })
@@ -201,5 +201,60 @@ describe('cwd recovery for files too large to scan', () => {
     ].join('\n') + '\n'
     expect(headCwd(head, r => r?.payload?.cwd)).toBe('/codex/proj')
     expect(headCwd('', r => r.cwd)).toBeNull()
+  })
+})
+
+describe('recent sessions', () => {
+  const rec = (type: string, ts: string, cwd = '/p') => JSON.stringify({ type, cwd, timestamp: ts, message: { content: 'x' } }) + '\n'
+
+  it('ranks by last chat, not by creation or file mtime', async () => {
+    const sharedRoot = join(home, 'shared')
+    const pdir = join(sharedRoot, 'projects', 'p')
+    await mkdir(pdir, { recursive: true })
+    // old: created first but chatted in last; its mtime is older than the other file's
+    await writeFile(join(pdir, 'old.jsonl'), rec('user', '2026-01-01T00:00:00Z') + rec('assistant', '2026-03-01T00:00:00Z'))
+    await writeFile(join(pdir, 'new.jsonl'), rec('user', '2026-02-01T00:00:00Z'))
+    await utimes(join(pdir, 'old.jsonl'), new Date('2025-01-01'), new Date('2025-01-01'))
+    // a plugin's SDK worker chatting later must not crowd out real sessions
+    await writeFile(join(pdir, 'bot.jsonl'), JSON.stringify({ type: 'user', entrypoint: 'sdk-ts', timestamp: '2026-09-01T00:00:00Z', message: { content: 'x' } }) + '\n')
+    const rows = await scanSessions({ sharedRoot, profiles: [] })
+    const top = recentSessions(rows, 1)
+    expect(top.map(r => r.session.id)).toEqual(['old'])
+    expect(top[0].session.lastActivity).toBe(Date.parse('2026-03-01T00:00:00Z'))
+  })
+
+  it('prefers a custom title over the AI one', () => {
+    const t = (type: string, k: string, v: string) => JSON.stringify({ type, [k]: v }) + '\n'
+    expect(sessionTitle(t('ai-title', 'aiTitle', 'auto') + t('custom-title', 'customTitle', 'mine') + t('ai-title', 'aiTitle', 'auto2'))).toBe('mine')
+    expect(sessionTitle(t('ai-title', 'aiTitle', 'auto'))).toBe('auto')
+    expect(sessionTitle('')).toBeNull()
+  })
+
+  it('caps at the limit across projects', () => {
+    const s = (id: string, t: number) => ({ id, mtime: 0, lastActivity: t, messageCount: 1, firstPrompt: null, gitBranch: null, model: null, sizeBytes: 1 })
+    const rows = [
+      { agent: 'claude' as const, scope: 'a', project: '/a', sessions: [s('a1', 5), s('a2', 1)] },
+      { agent: 'claude' as const, scope: 'b', project: '/b', sessions: [s('b1', 3)] },
+    ]
+    expect(recentSessions(rows, 2).map(r => r.session.id)).toEqual(['a1', 'b1'])
+  })
+
+  it('builds a resume command through the owning profile', () => {
+    const r = { agent: 'claude' as const, scope: 'shared', project: "/it's here", session: { id: 'abc' } as any }
+    const profiles = [{ name: 'x', sharedSessions: false, launcher: 'cx', dir: '/h/.claude-x' }, { name: 'y', sharedSessions: true, launcher: 'cy', dir: '/h/.claude-y' }]
+    expect(resumeCommand(r, sessionOwner(r, profiles))).toBe(`cd '/it'\\''s here' && cy --resume abc`)
+    expect(resumeCommand({ ...r, scope: 'x' }, { launcher: null, dir: '/h/.claude-x' })).toBe(`cd '/it'\\''s here' && CLAUDE_CONFIG_DIR='/h/.claude-x' claude --resume abc`)
+  })
+
+  it('keeps a Codex sub-agent under its own id and out of the recent list', async () => {
+    const dir = join(home, 'shared', 'sessions', '2026', '10', '12')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'rollout-sub.jsonl'),
+      JSON.stringify({ type: 'session_meta', payload: { id: 'child', cwd: '/c', thread_source: 'subagent', source: { subagent: {} } } }) + '\n' +
+      JSON.stringify({ type: 'session_meta', payload: { id: 'parent', cwd: '/c' } }) + '\n' +
+      JSON.stringify({ type: 'response_item', timestamp: '2026-10-12T00:00:00Z', payload: { type: 'message', role: 'user', content: 'hi' } }) + '\n')
+    const rows = await scanSessions({ sharedRoot: join(home, 'shared'), profiles: [] })
+    expect(rows[0].sessions[0]).toMatchObject({ id: 'child', automated: true })
+    expect(recentSessions(rows)).toEqual([])
   })
 })

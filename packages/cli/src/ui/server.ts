@@ -4,6 +4,7 @@ import { buildRoutes } from './api.js'
 import { matchRoute, sendJson, HttpError } from './http.js'
 import { tokenOk, originOk } from './token.js'
 import { serveStatic } from './static.js'
+import { withProgress } from '../progress.js'
 
 export async function startUiServer(
   ctx: CliContext,
@@ -23,12 +24,27 @@ export async function startUiServer(
 
     const m = matchRoute(routes, req.method ?? 'GET', path)
     if (!m) return sendJson(res, 404, { error: 'not found' })
+
+    // A client that asks for progress gets NDJSON: one {step} line per step() the handler makes,
+    // then a final {status, body} line carrying what the handler would have sent as plain JSON.
+    let out = res
+    let report = (_msg: string) => {}
+    if (req.headers['x-ccp-progress'] === '1') {
+      res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' })
+      const line = (o: unknown) => res.write(JSON.stringify(o) + '\n')
+      let status = 200
+      out = {
+        writeHead(code: number) { status = code; return out },
+        end(text: string) { line({ status, body: JSON.parse(text) }); res.end(); return out },
+      } as unknown as typeof res
+      report = msg => line({ step: msg })
+    }
     try {
-      await m.route.handler(m.match, req, res)
+      await withProgress(report, () => m.route.handler(m.match, req, out))
     } catch (e) {
-      if (e instanceof HttpError) return sendJson(res, e.status, { error: e.message })
+      if (e instanceof HttpError) return sendJson(out, e.status, { error: e.message })
       process.stderr.write(`ui api error: ${(e as Error).stack ?? e}\n`)
-      return sendJson(res, 500, { error: 'internal error' })
+      return sendJson(out, 500, { error: 'internal error' })
     }
   })
 

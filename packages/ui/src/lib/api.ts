@@ -1,17 +1,71 @@
-const token = new URLSearchParams(location.search).get('t') ?? ''
+import { toast } from '@/components/ui/sonner'
+
+// Keep the token in sessionStorage so a refresh still authenticates. A fresh `?t=` wins
+// (server restarts mint a new token). Tab-scoped: gone when the tab closes.
+const urlToken = new URLSearchParams(location.search).get('t')
+let token = urlToken ?? ''
+try {
+  if (urlToken) sessionStorage.setItem('ccp-token', urlToken)
+  else token = sessionStorage.getItem('ccp-token') ?? ''
+} catch {}
 // Strip the token from the address bar once it's captured — it must not linger in
 // history, bookmarks, or anything that reads location.href after boot.
 history.replaceState(null, '', location.pathname + location.hash)
 
+let progressSeq = 0
+
+/**
+ * Mutations ask the server for progress: it streams one `{step}` line per step, then a final
+ * `{status, body}` line. A loading toast shows the current step and elapsed time; it only
+ * appears if the request outlasts a blink, and the caller's own success/error toast replaces it.
+ */
 async function req(method: string, path: string, body?: unknown): Promise<any> {
+  const streamed = method !== 'GET'
   const res = await fetch(path, {
     method,
-    headers: { 'content-type': 'application/json', 'x-ccp-token': token },
+    headers: { 'content-type': 'application/json', 'x-ccp-token': token, ...(streamed && { 'x-ccp-progress': '1' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error ?? `${res.status} ${res.statusText}`)
-  return data
+  if (!streamed || !res.headers.get('content-type')?.includes('ndjson') || !res.body) {
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error ?? `${res.status} ${res.statusText}`)
+    return data
+  }
+
+  const id = `progress-${++progressSeq}`
+  const started = Date.now()
+  let current = 'Working…', steps = 0, shown = false
+  const render = () => {
+    shown = true
+    toast.loading(current, { id, description: `${steps ? `Step ${steps} · ` : ''}${Math.round((Date.now() - started) / 1000)}s` })
+  }
+  const timer = setInterval(render, 1000)
+  const firstPaint = setTimeout(render, 400)
+
+  let final: { status: number; body: any } | null = null
+  try {
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+    let buf = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += value
+      let nl
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1)
+        if (!line.trim()) continue
+        const msg = JSON.parse(line)
+        if ('step' in msg) { current = msg.step; steps++; if (shown) render() }
+        else final = msg
+      }
+    }
+  } finally {
+    clearInterval(timer); clearTimeout(firstPaint)
+    toast.dismiss(id)
+  }
+  if (!final) throw new Error('connection closed before the server finished — check the terminal running ccprofiles ui')
+  if (final.status >= 400) throw new Error(final.body?.error ?? `request failed (${final.status})`)
+  return final.body
 }
 
 export type ProfilePatch = {
@@ -46,6 +100,7 @@ export const api = {
   doctor: () => req('GET', '/api/doctor'),
   fix: () => req('POST', '/api/fix'),
   sessions: () => req('GET', '/api/sessions'),
+  recentSessions: () => req('GET', '/api/sessions/recent'),
   sessionTranscript: (agent: 'claude' | 'codex', scope: string, id: string) =>
     req('GET', `/api/sessions/${agent}/${encodeURIComponent(scope)}/${encodeURIComponent(id)}`),
   devices: () => req('GET', '/api/devices'),

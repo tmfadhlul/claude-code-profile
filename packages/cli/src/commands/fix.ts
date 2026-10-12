@@ -3,6 +3,7 @@ import { discoverProfiles, liveProfileName, planPluginVersionDrift } from 'ccpro
 import type { CliContext } from '../context.js'
 import { claudeRunner, prunePluginCaches } from './plugins.js'
 import { migrateRcSecrets } from './secrets.js'
+import { step } from '../progress.js'
 
 /**
  * Apply the doctor findings that have a safe, mechanical, non-destructive remedy — the "things you
@@ -21,6 +22,7 @@ import { migrateRcSecrets } from './secrets.js'
  */
 export async function runAutoFixes(ctx: CliContext): Promise<{ fixed: string[] }> {
   const fixed: string[] = []
+  step('Checking plugin versions across profiles')
   const live = await discoverProfiles(ctx.home)
   const claude = live.filter(l => l.agent === 'claude')
 
@@ -40,8 +42,10 @@ export async function runAutoFixes(ctx: CliContext): Promise<{ fixed: string[] }
   // by the pin, so a leftover old version dir still gets run and revives the shared-worker leak.
   // Prune every profile down to one claude-mem version. Runs after the drift update so a freshly
   // installed latest is the survivor.
+  step('Pruning stale plugin caches')
   for (const line of await prunePluginCaches(ctx)) fixed.push(line)
 
+  step('Moving plaintext secrets to the keychain')
   for (const secret of await migrateRcSecrets(ctx, {})) fixed.push(`migrated plaintext secret ${secret} → keychain`)
 
   return { fixed }

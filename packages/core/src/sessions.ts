@@ -5,7 +5,12 @@ import { join } from 'node:path'
 export interface SessionMeta {
   id: string
   mtime: number
+  /** Timestamp (ms) of the last user/assistant record — when you last chatted, not when the
+   *  file was created or last copied. Falls back to mtime when no record carries a timestamp. */
+  lastActivity: number
   messageCount: number
+  /** Session name: your `/rename` title if set, else Claude's auto-generated one. */
+  title?: string | null
   firstPrompt: string | null
   gitBranch: string | null
   model: string | null
@@ -13,6 +18,8 @@ export interface SessionMeta {
   /** true when the transcript was too large to fully scan (per-file cap) or the per-request
    *  byte budget ran out before reaching it — metadata is best-effort / incomplete. */
   truncated?: boolean
+  /** Driven by the Agent SDK (e.g. a plugin's background worker), not a chat you'd resume. */
+  automated?: boolean
 }
 
 export interface ProjectSessions {
@@ -53,8 +60,9 @@ const codexSessionCache = new Map<string, CacheEntry>()
 
 /** Per-file cap: a transcript above this size is summarized without reading its content. */
 const MAX_FILE_SCAN_BYTES = 10 * 1024 * 1024
-// enough to reach the first record carrying cwd, without reading a multi-MB transcript
-const HEAD_SCAN_BYTES = 64 * 1024
+// enough to reach the first real prompt (Codex Desktop front-loads ~140KB of AGENTS.md and
+// instructions), without reading a multi-MB transcript
+const HEAD_SCAN_BYTES = 256 * 1024
 /** Per-request cap: once this many bytes have been read from disk in one scanSessions() call,
  *  remaining (uncached) files are summarized without reading their content either. */
 const MAX_TOTAL_SCAN_BYTES = 50 * 1024 * 1024
@@ -79,13 +87,15 @@ export function decodeProjectDir(name: string): string {
   return name.replace(/^-/, '/').replace(/-/g, '/')
 }
 
-/** First `bytes` of a file, for cheap field recovery without reading a multi-MB transcript. */
-async function readHead(file: string, bytes = HEAD_SCAN_BYTES): Promise<string> {
+/** First (or, with `fromEnd`, last) `bytes` of a file, for cheap field recovery without
+ *  reading a multi-MB transcript. */
+async function readHead(file: string, bytes = HEAD_SCAN_BYTES, fromEnd = false): Promise<string> {
   let fh: FileHandle | null = null
   try {
     fh = await open(file, 'r')
     const buf = Buffer.alloc(bytes)
-    const { bytesRead } = await fh.read(buf, 0, bytes, 0)
+    const pos = fromEnd ? Math.max(0, (await fh.stat()).size - bytes) : 0
+    const { bytesRead } = await fh.read(buf, 0, bytes, pos)
     return buf.subarray(0, bytesRead).toString('utf8')
   } catch {
     return ''
@@ -109,10 +119,49 @@ export function headCwd(head: string, pick: (rec: any) => string | undefined): s
   return null
 }
 
+/** Is this record a chat turn (user or assistant), in either the Claude or Codex format? */
+function isChatRecord(rec: any): boolean {
+  if (rec?.type === 'user' || rec?.type === 'assistant') return true
+  const p = rec?.payload
+  if (rec?.type === 'response_item') return p?.type === 'message' && (p.role === 'user' || p.role === 'assistant')
+  return rec?.type === 'event_msg' && (p?.type === 'user_message' || p?.type === 'agent_message')
+}
+
+/**
+ * Latest chat-record timestamp in a JSONL slice, or null. Partial lines at either edge of a
+ * slice fail JSON.parse and are skipped.
+ */
+export function lastChatTime(text: string): number | null {
+  let last: number | null = null
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue
+    let rec: any
+    try { rec = JSON.parse(line) } catch { continue }
+    if (!isChatRecord(rec) || typeof rec.timestamp !== 'string') continue
+    const t = Date.parse(rec.timestamp)
+    if (!Number.isNaN(t) && (last === null || t > last)) last = t
+  }
+  return last
+}
+
+/** Latest custom title in a Claude JSONL slice, else the latest AI-generated one, else null. */
+export function sessionTitle(text: string): string | null {
+  let custom: string | null = null, ai: string | null = null
+  for (const line of text.split('\n')) {
+    if (!line.includes('-title"')) continue
+    let rec: any
+    try { rec = JSON.parse(line) } catch { continue }
+    if (rec.type === 'custom-title' && typeof rec.customTitle === 'string' && rec.customTitle.trim()) custom = rec.customTitle.trim()
+    if (rec.type === 'ai-title' && typeof rec.aiTitle === 'string' && rec.aiTitle.trim()) ai = rec.aiTitle.trim()
+  }
+  return custom ?? ai
+}
+
 /**
  * Shared mtime+size cache lookup for the two session-file formats. `parseFull` runs only on a
- * cache miss with a fresh read; `makeTruncated` builds a summary-only result when the file is
- * over the per-file cap or the per-request byte budget is exhausted. A size-cap truncation is
+ * cache miss with a fresh read. When the file is over the per-file cap or the per-request byte
+ * budget is exhausted, `parseFull` runs on just the head slice (prompt, cwd, branch, model all
+ * live near the top) and the last chat time comes from the tail slice. A size-cap truncation is
  * deterministic (depends only on the file) and gets cached; a budget-cap truncation depends on
  * request ordering, so it is *not* cached — a later request with a fresh budget may read it fully.
  */
@@ -121,8 +170,15 @@ async function cachedParse(
   cache: Map<string, CacheEntry>,
   budget: ScanBudget,
   parseFull: (raw: string, st: Stats) => ParsedSession,
-  makeTruncated: (st: Stats, head: string) => ParsedSession,
 ): Promise<ParsedSession | null> {
+  const truncated = async (): Promise<ParsedSession> => {
+    const r = parseFull(await readHead(file), st)
+    const tail = await readHead(file, HEAD_SCAN_BYTES, true)
+    // a single record can outgrow the head slice, so look for the SDK marker in the tail too
+    const automated = r.meta.automated || /"entrypoint":"sdk/.test(tail)
+    const title = sessionTitle(tail) ?? r.meta.title
+    return { ...r, meta: { ...r.meta, ...(title && { title }), messageCount: 0, lastActivity: lastChatTime(tail) ?? st.mtimeMs, truncated: true, ...(automated && { automated }) } }
+  }
   let st: Stats
   try { st = await stat(file) } catch { return null }
   const cached = cache.get(file)
@@ -132,11 +188,11 @@ async function cachedParse(
   }
   scanCacheMisses++
   if (st.size > MAX_FILE_SCAN_BYTES) {
-    const result = makeTruncated(st, await readHead(file))
+    const result = await truncated()
     cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, result })
     return result
   }
-  if (st.size > budget.bytesLeft) return makeTruncated(st, await readHead(file)) // not cached — budget is per-request
+  if (st.size > budget.bytesLeft) return truncated() // not cached — budget is per-request
   let raw: string
   try { raw = await readFile(file, 'utf8') } catch { return null }
   budget.bytesLeft -= st.size
@@ -151,22 +207,24 @@ async function parseClaudeSession(file: string, budget: ScanBudget): Promise<Par
     (raw, st) => {
       const lines = raw.split('\n').filter(l => l.trim())
       let firstPrompt: string | null = null, gitBranch: string | null = null, model: string | null = null, cwd: string | null = null
+      let automated = false
       for (const line of lines) {
         let rec: any
         try { rec = JSON.parse(line) } catch { continue }
+        if (typeof rec.entrypoint === 'string' && rec.entrypoint.startsWith('sdk')) automated = true
         if (cwd === null && typeof rec.cwd === 'string') cwd = rec.cwd
         if (gitBranch === null && typeof rec.gitBranch === 'string') gitBranch = rec.gitBranch
         if (firstPrompt === null && rec.type === 'user') {
           const c = rec.message?.content
-          const text = typeof c === 'string' ? c : Array.isArray(c) ? c.find((x: any) => x?.type === 'text')?.text : null
+          const text = typeof c === 'string' ? c : Array.isArray(c) ? c.find((x: any) => x?.type === 'text' && !String(x.text).trimStart().startsWith('<'))?.text : null
           if (typeof text === 'string' && text.trim() && !text.trimStart().startsWith('<')) firstPrompt = text.trim().slice(0, 200)
         }
         if (model === null && typeof rec.message?.model === 'string') model = rec.message.model
         if (firstPrompt && model && gitBranch && cwd) break
       }
-      return { meta: { id, mtime: st.mtimeMs, messageCount: lines.length, firstPrompt, gitBranch, model, sizeBytes: st.size }, cwd }
+      const lastActivity = lastChatTime(raw) ?? st.mtimeMs
+      return { meta: { id, mtime: st.mtimeMs, lastActivity, messageCount: lines.length, title: sessionTitle(raw), firstPrompt, gitBranch, model, sizeBytes: st.size, ...(automated && { automated }) }, cwd }
     },
-    (st, head) => ({ meta: { id, mtime: st.mtimeMs, messageCount: 0, firstPrompt: null, gitBranch: null, model: null, sizeBytes: st.size, truncated: true }, cwd: headCwd(head, r => r.cwd) }),
   )
 }
 
@@ -190,7 +248,7 @@ async function scanProjectsDir(projectsDir: string, scope: string, budget: ScanB
       if (cwd === null) cwd = parsed.cwd
     }
     if (!sessions.length) continue
-    sessions.sort((a, b) => b.mtime - a.mtime)
+    sessions.sort((a, b) => b.lastActivity - a.lastActivity)
     out.push({ agent: 'claude', scope, project: cwd ?? decodeProjectDir(proj.name), sessions })
   }
   return out
@@ -275,9 +333,13 @@ async function parseCodexTranscript(file: string, scope: string): Promise<Sessio
   let project = '(unknown project)'
   const hasResponseMessages = records.some(rec => rec?.type === 'response_item' && rec?.payload?.type === 'message')
   const messages: TranscriptEntry[] = []
+  let seenMeta = false
   for (const rec of records) {
     const payload = rec?.payload
     if (rec?.type === 'session_meta') {
+      // a sub-agent thread replays its parent's session_meta after its own — the first is ours
+      if (seenMeta) continue
+      seenMeta = true
       if (typeof payload?.id === 'string') id = payload.id
       else if (typeof payload?.session_id === 'string') id = payload.session_id
       if (typeof payload?.cwd === 'string') project = payload.cwd
@@ -307,11 +369,15 @@ async function parseCodexSession(file: string, budget: ScanBudget): Promise<Pars
       const lines = raw.split('\n').filter(l => l.trim())
       let id: string | null = null, firstPrompt: string | null = null, gitBranch: string | null = null
       let model: string | null = null, cwd: string | null = null, messageCount = 0
+      let seenMeta = false, automated = false
       for (const line of lines) {
         let rec: any
         try { rec = JSON.parse(line) } catch { continue }
         const payload = rec?.payload
-        if (rec?.type === 'session_meta') {
+        // a sub-agent thread replays its parent's session_meta after its own — the first is ours
+        if (rec?.type === 'session_meta' && !seenMeta) {
+          seenMeta = true
+          automated = payload?.thread_source === 'subagent' || payload?.source?.subagent !== undefined
           if (typeof payload?.id === 'string') id = payload.id
           else if (typeof payload?.session_id === 'string') id = payload.session_id
           if (typeof payload?.cwd === 'string') cwd = payload.cwd
@@ -326,7 +392,7 @@ async function parseCodexSession(file: string, budget: ScanBudget): Promise<Pars
           messageCount++
           if (firstPrompt === null && payload.role === 'user') {
             const text = messageText(payload.content)
-            if (text?.trim() && !text.trimStart().startsWith('<')) firstPrompt = text.trim().slice(0, 200)
+            if (text?.trim() && !/^\s*(<|# AGENTS\.md instructions)/.test(text)) firstPrompt = text.trim().slice(0, 200)
           }
         }
         if (firstPrompt === null && rec?.type === 'event_msg' && payload?.type === 'user_message'
@@ -335,9 +401,8 @@ async function parseCodexSession(file: string, budget: ScanBudget): Promise<Pars
         }
       }
       id ??= fallbackId
-      return { meta: { id, mtime: st.mtimeMs, messageCount: messageCount || lines.length, firstPrompt, gitBranch, model, sizeBytes: st.size }, cwd }
+      return { meta: { id, mtime: st.mtimeMs, lastActivity: lastChatTime(raw) ?? st.mtimeMs, messageCount: messageCount || lines.length, firstPrompt, gitBranch, model, sizeBytes: st.size, ...(automated && { automated }) }, cwd }
     },
-    (st, head) => ({ meta: { id: fallbackId, mtime: st.mtimeMs, messageCount: 0, firstPrompt: null, gitBranch: null, model: null, sizeBytes: st.size, truncated: true }, cwd: headCwd(head, r => r?.payload?.cwd) }),
   )
 }
 
@@ -376,7 +441,7 @@ async function scanCodexSessionsDir(sessionsDir: string, scope: string, budget: 
   }
   return [...byProject.entries()].map(([project, sessions]) => ({
     agent: 'codex' as const, scope, project,
-    sessions: sessions.sort((a, b) => b.mtime - a.mtime),
+    sessions: sessions.sort((a, b) => b.lastActivity - a.lastActivity),
   }))
 }
 
@@ -396,7 +461,52 @@ export async function scanSessions(opts: {
       ? await scanCodexSessionsDir(sessionDir, p.name, budget)
       : await scanProjectsDir(sessionDir, p.name, budget))
   }
-  return out
+  return out.sort((a, b) => b.sessions[0].lastActivity - a.sessions[0].lastActivity)
+}
+
+export interface RecentSession {
+  agent: 'claude' | 'codex'
+  scope: string
+  project: string
+  session: SessionMeta
+}
+
+/** The `limit` sessions you chatted in most recently, across every project and profile. */
+export function recentSessions(rows: ProjectSessions[], limit = 10): RecentSession[] {
+  return rows
+    .flatMap(p => p.sessions.filter(s => !s.automated).map(session => ({ agent: p.agent, scope: p.scope, project: p.project, session })))
+    .sort((a, b) => b.session.lastActivity - a.session.lastActivity)
+    .slice(0, limit)
+}
+
+const shq = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
+
+/**
+ * Paste-ready command that reopens a session in its own project under the profile that owns it.
+ * Prefers the profile's launcher (it carries provider env and secrets); otherwise points the
+ * agent at the profile dir directly. `owner` is null when no declared profile matches the scope.
+ */
+export function resumeCommand(
+  r: Pick<RecentSession, 'agent' | 'project' | 'session'>,
+  owner: { launcher: string | null; dir: string } | null,
+): string {
+  const resume = r.agent === 'codex' ? `resume ${r.session.id}` : `--resume ${r.session.id}`
+  const bin = r.agent === 'codex' ? 'codex' : 'claude'
+  const run = owner?.launcher ? `${owner.launcher} ${resume}`
+    : owner ? `${r.agent === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR'}=${shq(owner.dir)} ${bin} ${resume}`
+    : `${bin} ${resume}`
+  return r.project.startsWith('/') ? `cd ${shq(r.project)} && ${run}` : run
+}
+
+/**
+ * Which profile reopens a session: the one named by its scope, or — for the shared pool — the
+ * first profile of the same agent that shares sessions.
+ */
+export function sessionOwner<P extends { name: string; agent?: 'claude' | 'codex'; sharedSessions?: boolean }>(
+  r: Pick<RecentSession, 'agent' | 'scope'>, profiles: P[],
+): P | null {
+  const same = profiles.filter(p => (p.agent ?? 'claude') === r.agent)
+  return (r.scope === 'shared' ? same.find(p => p.sharedSessions) : same.find(p => p.name === r.scope)) ?? null
 }
 
 /** Read visible conversation and tool activity for one known managed session. */

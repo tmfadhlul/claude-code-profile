@@ -4,11 +4,13 @@ import {
   planPluginVersionDrift, claudeMemCacheDirs, pruneStaleVersionDirs, repairInstalledPlugins, renderPath, type PluginRunner, type Manifest,
 } from 'ccprofiles-core'
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { requireManifest, type CliContext } from '../context.js'
+import { step } from '../progress.js'
 
 export function claudeRunner(): PluginRunner {
   const run = (configDir: string, args: string[]) => new Promise<void>((resolve, reject) => {
+    step(`claude plugin ${args.filter(a => a !== '--').join(' ')} · ${basename(configDir)}`)
     const p = spawn('claude', ['plugin', ...args], { env: { ...process.env, CLAUDE_CONFIG_DIR: configDir }, stdio: ['ignore', 'pipe', 'pipe'] })
     let err = ''
     p.stderr?.on('data', d => { err += d })
@@ -60,6 +62,7 @@ export async function reconcilePlugins(ctx: CliContext, m: Manifest, names: stri
     const pr = m.profiles.find(p => p.name === name)!
     if ((pr.agent ?? 'claude') !== 'claude') continue
     const dir = renderPath(pr.dir, ctx.platform)
+    step(`Reconciling plugins in ${name}`)
     await restoreLegacyPluginSymlink(join(dir, 'plugins'))
     const lp = live.find(l => l.dir === dir)
     // "current" must be what is actually INSTALLED, not what settings.json claims is enabled —

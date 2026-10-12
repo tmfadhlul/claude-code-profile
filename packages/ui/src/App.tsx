@@ -18,7 +18,7 @@ type NavItem = readonly [Tab, string, LucideIcon]
 type NavGroup = { label: string; items: readonly NavItem[] }
 
 const NAV: readonly NavGroup[] = [
-  { label: 'Overview', items: [['status', 'Status', LayoutDashboard]] },
+  { label: 'Overview', items: [['status', 'Dashboard', LayoutDashboard]] },
   { label: 'Workspace', items: [['profiles', 'Profiles', Users], ['sessions', 'Sessions', History]] },
   { label: 'Configuration', items: [['mcp', 'MCP', Boxes], ['plugins', 'Plugins', Puzzle], ['secrets', 'Secrets', KeyRound], ['rc', 'Shell RC', Terminal]] },
   { label: 'System', items: [['sync', 'Sync', RefreshCw], ['doctor', 'Doctor', Stethoscope]] },

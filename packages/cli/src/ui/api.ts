@@ -10,6 +10,8 @@ import { execFileSync } from 'node:child_process'
 import { requireManifest, cliVersion, type CliContext } from '../context.js'
 import { secretsStore, migrateRcSecrets, migrateSettingsSecrets, KEY_VARS } from '../commands/secrets.js'
 import { reconcilePlugins } from '../commands/plugins.js'
+import { loadSessions, recentWithResume } from '../commands/sessions.js'
+import { step } from '../progress.js'
 import { runAutoFixes } from '../commands/fix.js'
 import { sendJson, readJson, HttpError, type Route } from './http.js'
 import { planActions, planActionsPreflight } from '../plan.js'
@@ -32,7 +34,9 @@ export function buildRoutes(ctx: CliContext): Route[] {
   }
 
   async function applyAndReport(m: Manifest) {
+    step('Planning changes')
     const actions = await planActionsOr409(m)
+    if (actions.length) step(`Applying ${actions.length} change${actions.length === 1 ? '' : 's'}`)
     return executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp() })
   }
 
@@ -189,12 +193,12 @@ export function buildRoutes(ctx: CliContext): Route[] {
   })
 
   add('GET', /^\/api\/sessions$/, async (_m, _req, res) => {
-    const live = await discoverProfiles(ctx.home)
-    const rows = await scanSessions({
-      sharedRoot: join(ctx.manifestRoot, 'shared'),
-      profiles: live.map(lp => ({ name: liveProfileName(lp), dir: lp.dir, agent: lp.agent })),
-    })
-    sendJson(res, 200, rows)
+    sendJson(res, 200, (await loadSessions(ctx)).rows)
+  })
+
+  add('GET', /^\/api\/sessions\/recent$/, async (_m, _req, res) => {
+    const { rows, profiles } = await loadSessions(ctx)
+    sendJson(res, 200, recentWithResume(rows, profiles))
   })
 
   add('GET', /^\/api\/sessions\/([^/]+)\/([^/]+)\/([^/]+)$/, async (mtch, _req, res) => {
@@ -518,6 +522,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     const { from, withSecrets, dryRun } = await readJson<{ from: string; withSecrets?: boolean; dryRun?: boolean }>(req)
     const device = (await loadDevices(ctx.manifestRoot)).find(d => d.name === from)
     if (!device) throw new HttpError(400, `unknown device: ${from}`)
+    step(`Fetching manifest from ${device.name}`)
     const { manifestYaml, assets } = await fetchRemote(device)
     const m = parseManifest(manifestYaml)
 
@@ -525,6 +530,7 @@ export function buildRoutes(ctx: CliContext): Route[] {
     // a just-transferred secret succeeds instead of failing after the manifest is overwritten.
     let secrets: string[] = []
     if (withSecrets) {
+      step('Fetching secrets')
       const values = await fetchSecrets(device, [])
       if (!dryRun) { const store = await secretsStore(ctx); for (const [k, v] of Object.entries(values)) await store.set(k, v) }
       secrets = Object.keys(values)
@@ -532,10 +538,12 @@ export function buildRoutes(ctx: CliContext): Route[] {
 
     // Validate the pulled manifest resolves cleanly before saving/applying anything — a peer
     // manifest with a settingsEnv secret ref we don't have must not overwrite local state.
+    step('Validating pulled manifest')
     try { await planActionsPreflight(ctx, m) }
     catch (e) { throw new HttpError(409, (e as Error).message) }
 
     if (!dryRun) {
+      step('Saving manifest and assets')
       await backupFiles([join(ctx.manifestRoot, 'manifest.yaml')], ctx.backupRoot, stamp())
       await saveManifest(ctx.manifestRoot, m)
       await writeAssets(assets, m, ctx.platform, { backupRoot: ctx.backupRoot, stamp: stamp() })

@@ -43,4 +43,18 @@ describe('ui server', () => {
     const r = await fetch(base + '/api/profiles', { headers: { 'x-ccp-token': token, origin: 'http://evil.com' } })
     expect(r.status).toBe(403)
   })
+
+  it('streams steps then the final result when asked for progress', async () => {
+    const post = async (path: string) => {
+      const r = await fetch(base + path, { method: 'POST', headers: { 'x-ccp-token': token, 'x-ccp-progress': '1' } })
+      expect(r.headers.get('content-type')).toContain('ndjson')
+      return (await r.text()).trim().split('\n').map(l => JSON.parse(l))
+    }
+    // no manifest yet → the error rides in the final line, not the HTTP status
+    expect((await post('/api/apply')).at(-1)).toMatchObject({ status: 409 })
+    await post('/api/adopt')
+    const lines = await post('/api/apply')
+    expect(lines[0]).toEqual({ step: 'Planning changes' })
+    expect(lines.at(-1)).toMatchObject({ status: 200, body: { performed: expect.any(Array) } })
+  })
 })
