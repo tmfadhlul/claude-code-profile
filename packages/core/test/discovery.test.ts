@@ -142,6 +142,19 @@ describe('discoverProfiles', () => {
     expect(planPluginVersionDrift(live.map(p => ({ name: p.dirName, versions: p.installedPluginVersions })))).toEqual([])
   })
 
+  it('ignores a short sha that newer Claude Code writes into version', async () => {
+    const h = await mkdtemp(join(tmpdir(), 'ccp-disc-shaver-'))
+    for (const [dir, sha] of [['.claude-a', 'f359d43b406057f1a8cdbc4ea93b827642c162e6'], ['.claude-b', 'fa59bc903774aaaaaaaaaaaaaaaaaaaaaaaaaaaa']] as const) {
+      await mkdir(join(h, dir, 'plugins'), { recursive: true })
+      await writeFile(join(h, dir, '.claude.json'), '{}')
+      await writeFile(join(h, dir, 'plugins', 'installed_plugins.json'), JSON.stringify({
+        version: 2, plugins: { 'context7@claude-plugins-official': [{ scope: 'user', version: sha.slice(0, 12), gitCommitSha: sha }] },
+      }))
+    }
+    const live = await discoverProfiles(h)
+    expect(live.every(p => Object.keys(p.installedPluginVersions).length === 0)).toBe(true)
+  })
+
   it('keeps a real release version rather than its sha', async () => {
     // the guard above must not swallow '13.11.0' just because a gitCommitSha sits next to it
     const h = await mkdtemp(join(tmpdir(), 'ccp-disc-rel-'))

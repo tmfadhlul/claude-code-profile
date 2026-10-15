@@ -95,6 +95,27 @@ describe('ui api: plugins', () => {
     // both profiles hold the plugin, so both get updated to latest (the one already ahead no-ops)
     expect(calls.filter(c => c === 'update claude-mem@thedotmack').length).toBe(2)
     expect(res._json.fixed).toHaveLength(2)
+    // each profile's marketplace clone is refreshed before its update — otherwise update no-ops
+    expect(calls.slice(0, 2)).toEqual(['mkt-update thedotmack', 'update claude-mem@thedotmack'])
+    // the fake never moves the version, i.e. the real-world "fix did nothing" — it must say so
+    expect(res._json.failed).toEqual([expect.stringMatching(/claude-mem@thedotmack still differs/)])
+  })
+
+  it('fix keeps going when one profile\'s update throws', async () => {
+    for (const [dir, version] of [['.claude', '13.10.4'], ['.claude-work', '13.11.0']] as const) {
+      await mkdir(join(home, dir, 'plugins'), { recursive: true })
+      await writeFile(join(home, dir, 'plugins', 'installed_plugins.json'),
+        JSON.stringify({ version: 2, plugins: { 'claude-mem@thedotmack': [{ scope: 'user', version }] } }))
+    }
+    let first = true
+    ctx.pluginRunner = { ...fake(), update: async (_d: string, id: string) => {
+      if (first) { first = false; throw new Error('boom') }
+      calls.push(`update ${id}`)
+    } }
+    const res = await callApi(ctx, 'POST', '/api/fix')
+    expect(res._status).toBe(200)
+    expect(calls).toContain('update claude-mem@thedotmack')
+    expect(res._json.failed.some((f: string) => /boom/.test(f))).toBe(true)
   })
 
   it('doctor is not fixable and fix is a no-op when nothing is wrong', async () => {

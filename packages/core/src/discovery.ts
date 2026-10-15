@@ -59,8 +59,11 @@ function userScopeEntries(entries: unknown): Array<{ version?: unknown; gitCommi
 export function readInstalledPluginVersions(plugins: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [id, entries] of Object.entries(plugins)) {
-    for (const { version } of userScopeEntries(entries)) {
-      if (typeof version === 'string' && version && version !== 'unknown') { out[id] = version; break }
+    for (const { version, gitCommitSha } of userScopeEntries(entries)) {
+      // Newer Claude Code writes the short sha INTO `version` instead of 'unknown' — same unusable
+      // identity, so it must be skipped the same way.
+      const isSha = typeof gitCommitSha === 'string' && typeof version === 'string' && gitCommitSha.startsWith(version)
+      if (typeof version === 'string' && version && version !== 'unknown' && !isSha) { out[id] = version; break }
     }
   }
   return out

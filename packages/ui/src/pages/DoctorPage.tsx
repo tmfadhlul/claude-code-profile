@@ -20,9 +20,10 @@ export function DoctorPage() {
   const fix = async () => {
     setFixing(true)
     try {
-      const { fixed } = await api.fix()
-      toast.success(fixed.length ? `Fixed ${fixed.length} finding(s)` : 'Nothing to fix')
+      const { fixed, failed = [] } = await api.fix()
+      if (fixed.length || !failed.length) toast.success(fixed.length ? `Fixed ${fixed.length} finding(s)` : 'Nothing to fix')
       for (const f of fixed as string[]) toast.message(f)
+      for (const f of failed as string[]) toast.error(f)
       await load()
     } catch (e: any) { toast.error(e.message) } finally { setFixing(false) }
   }
