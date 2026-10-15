@@ -8,6 +8,7 @@ import { requireManifest, type CliContext } from '../context.js'
 import { planActions } from '../plan.js'
 import { secretsStore } from './secrets.js'
 import { ensureManifestStatusline } from '../statusline-install.js'
+import { syncClaudeMemAuth } from './claudemem.js'
 
 function stamp(): string { return new Date().toISOString().replace(/[:.]/g, '-') }
 
@@ -25,10 +26,18 @@ export function registerManifestCommands(program: Command, ctx: CliContext): voi
     .action(async (opts: { dryRun?: boolean }) => {
       const m = await requireManifest(ctx)
       const actions = await planActions(ctx, m)
-      if (actions.length === 0) { console.log('in sync — nothing to do'); return }
-      const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!opts.dryRun })
-      for (const line of res.performed) console.log(`${opts.dryRun ? '[dry-run] ' : ''}${line}`)
-      if (res.backupDir) console.log(`backups: ${res.backupDir}`)
+      if (actions.length === 0) console.log('in sync — nothing to do')
+      else {
+        const res = await executeApply(actions, { backupRoot: ctx.backupRoot, stamp: stamp(), dryRun: !!opts.dryRun })
+        for (const line of res.performed) console.log(`${opts.dryRun ? '[dry-run] ' : ''}${line}`)
+        if (res.backupDir) console.log(`backups: ${res.backupDir}`)
+      }
+      // after the profiles are written, so a just-applied key/login is what claude-mem gets
+      try {
+        const cm = await syncClaudeMemAuth(ctx, { dryRun: !!opts.dryRun })
+        for (const line of cm.changed) console.log(`${opts.dryRun ? '[dry-run] ' : ''}${line}`)
+        if (cm.problem) console.warn(`warn: ${cm.problem}`)
+      } catch (e: any) { console.warn(`warn: ${e.message}`) }
     })
 
   program.command('snapshot').description('overwrite manifest from live state').action(async () => {

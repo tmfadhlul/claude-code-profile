@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import type { CliContext } from '../context.js'
 import { KEY_VARS, secretsStore, migrateRcSecrets } from './secrets.js'
 import { ensureManifestStatusline } from '../statusline-install.js'
+import { syncClaudeMemAuth } from './claudemem.js'
 
 export function registerProfileCommands(program: Command, ctx: CliContext): void {
   program.command('list').description('list Claude Code and Codex profiles').action(async () => {
@@ -93,6 +94,9 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
       for (const line of await repairInstalledPlugins(lp.dir, { dryRun: true }))
         problems.push(`${liveProfileName(lp)}: stale plugin install path — ${line} — run: ccprofiles fix`)
     }
+    const cm = await syncClaudeMemAuth(ctx, { dryRun: true }).catch((e: Error) => ({ changed: [] as string[], problem: e.message }))
+    for (const line of cm.changed) problems.push(`${line} — run: ccprofiles fix`)
+    if (cm.problem) problems.push(cm.problem)
     const migratable = await migrateRcSecrets(ctx, { dryRun: true })
     if (migratable.length) problems.push(`plaintext key(s) found in ${ctx.platform.rcFile} (${migratable.join(', ')}) — run: ccprofiles secrets migrate`)
     if (m) for (const pr of m.profiles) {

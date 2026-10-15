@@ -13,6 +13,7 @@ import { reconcilePlugins } from '../commands/plugins.js'
 import { loadSessions, recentWithResume } from '../commands/sessions.js'
 import { step } from '../progress.js'
 import { runAutoFixes } from '../commands/fix.js'
+import { syncClaudeMemAuth } from '../commands/claudemem.js'
 import { sendJson, readJson, HttpError, type Route } from './http.js'
 import { planActions, planActionsPreflight } from '../plan.js'
 import { ensureManifestStatusline } from '../statusline-install.js'
@@ -258,6 +259,9 @@ export function buildRoutes(ctx: CliContext): Route[] {
     }
     // Reuse `secrets migrate`'s own detection (dry-run) — see profiles.ts's doctor for why a
     // separate regex here would let this warning and the fix command disagree.
+    const cm = await syncClaudeMemAuth(ctx, { dryRun: true }).catch((e: Error) => ({ changed: [] as string[], problem: e.message }))
+    for (const line of cm.changed) problems.push(`${line} — run: ccprofiles fix`)
+    if (cm.problem) problems.push(cm.problem)
     const migratable = await migrateRcSecrets(ctx, { dryRun: true })
     if (migratable.length) problems.push(`plaintext key(s) in ${ctx.platform.rcFile} (${migratable.join(', ')}) — run secrets migrate`)
     if (man) for (const pr of man.profiles) {
@@ -274,8 +278,8 @@ export function buildRoutes(ctx: CliContext): Route[] {
     if (existsSync(manifestPath) && manifestHasPlaintextSecret(readFileSync(manifestPath, 'utf8')))
       problems.push(`plaintext secret in manifest.yaml — its git commit was skipped; run: ccprofiles secrets migrate`)
     // `fixable` drives the doctor UI's Fix button — it must match exactly what runAutoFixes (fix.ts)
-    // actually clears: plugin drift and plaintext rc secrets. Keep the two in step.
-    sendJson(res, 200, { problems, fixable: drift.length > 0 || migratable.length > 0 })
+    // actually clears: plugin drift, claude-mem credentials and plaintext rc secrets. Keep them in step.
+    sendJson(res, 200, { problems, fixable: drift.length > 0 || cm.changed.length > 0 || migratable.length > 0 })
   })
 
   add('POST', /^\/api\/fix$/, async (_m, _req, res) => {

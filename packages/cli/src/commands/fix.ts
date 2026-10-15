@@ -3,6 +3,7 @@ import { discoverProfiles, liveProfileName, marketplaceOf, planPluginVersionDrif
 import type { CliContext } from '../context.js'
 import { claudeRunner, prunePluginCaches } from './plugins.js'
 import { migrateRcSecrets } from './secrets.js'
+import { syncClaudeMemAuth } from './claudemem.js'
 import { step } from '../progress.js'
 
 /**
@@ -15,6 +16,7 @@ import { step } from '../progress.js'
  *     leak processes (see planPluginVersionDrift). `update` only ever moves to latest, so a profile
  *     already there no-ops — that's why every holder is updated, not just the laggard.
  *  2. Plaintext API keys in the shell rc file → migrate into the OS keychain (backs up first).
+ *  3. claude-mem without usable credentials → point it at an OAuth profile, else a key profile.
  *
  * Deliberately NOT auto-fixed (reported by doctor, left for a human): broken symlinks (which target?
  * remove or repair?), a configured git remote on the manifest repo (may be intentional), and
@@ -56,6 +58,11 @@ export async function runAutoFixes(ctx: CliContext): Promise<{ fixed: string[]; 
   // installed latest is the survivor.
   step('Pruning stale plugin caches')
   for (const line of await prunePluginCaches(ctx)) fixed.push(line)
+
+  // claude-mem drops the session's API key/token, so a token-only user records nothing until it is
+  // pointed at working credentials. "No credentials anywhere" is doctor's to report, not a failure here.
+  try { fixed.push(...(await syncClaudeMemAuth(ctx)).changed) }
+  catch (e: any) { failed.push(e.message) }
 
   step('Moving plaintext secrets to the keychain')
   for (const secret of await migrateRcSecrets(ctx, {})) fixed.push(`migrated plaintext secret ${secret} → keychain`)
